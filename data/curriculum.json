@@ -1,0 +1,882 @@
+{
+  "concepts": [
+    {
+      "order": 1,
+      "priority": 5,
+      "high_level_concept": "Neural Networks and Transformers: Introduction",
+      "prerequisites": [],
+      "sub_concepts": [
+        {
+          "order": 1,
+          "concept": "Recurrent Neural Networks (RNNs)"
+        },
+        {
+          "order": 2,
+          "concept": "Convolutional Neural Networks (CNNs)"
+        },
+        {
+          "order": 3,
+          "concept": "Encoder-Decoder Structure"
+        },
+        {
+          "order": 4,
+          "concept": "Auto-Regressive Models"
+        },
+        {
+          "order": 5,
+          "concept": "Training Costs"
+        },
+        {
+          "order": 6,
+          "concept": "Training Data"
+        },
+        {
+          "order": 7,
+          "concept": "Complex Recurrent Networks"
+        },
+        {
+          "order": 8,
+          "concept": "Training Regime"
+        }
+      ],
+      "domain": "Neural Networks and Transformers"
+    },
+    {
+      "order": 2,
+      "priority": 5,
+      "high_level_concept": "Neural Networks and Transformers: Attention Mechanisms",
+      "prerequisites": [
+        "Neural Networks and Transformers: Introduction"
+      ],
+      "sub_concepts": [
+        {
+          "order": 1,
+          "concept": "Self-Attention"
+        },
+        {
+          "order": 2,
+          "concept": "Multi-Head Attention"
+        },
+        {
+          "order": 3,
+          "concept": "Scaled Dot-Product Attention"
+        },
+        {
+          "order": 4,
+          "concept": "Attention Weights"
+        },
+        {
+          "order": 5,
+          "concept": "Additive Attention"
+        },
+        {
+          "order": 6,
+          "concept": "Dot-Product Attention"
+        },
+        {
+          "order": 7,
+          "concept": "Attention Visualization"
+        }
+      ],
+      "domain": "Neural Networks and Transformers",
+      "workflows": [
+        {
+          "workflow_id": "attention_mechanisms_001",
+          "steps": [
+            {
+              "order": 1,
+              "concept": "Define attention in neural networks."
+            },
+            {
+              "order": 2,
+              "concept": "Explain the need for attention in sequence modeling."
+            },
+            {
+              "order": 3,
+              "concept": "Introduce scaled dot-product attention."
+            },
+            {
+              "order": 4,
+              "concept": "Explain multi-head attention benefits."
+            },
+            {
+              "order": 5,
+              "concept": "Show attention in Transformer encoder and decoder."
+            },
+            {
+              "order": 6,
+              "concept": "Visualize attention weights for interpretability."
+            }
+          ],
+          "similarity_score": 0.6967
+        }
+      ]
+    },
+    {
+      "order": 3,
+      "priority": 5,
+      "high_level_concept": "Neural Networks and Transformers: Transformer Architecture",
+      "prerequisites": [
+        "Neural Networks and Transformers: Attention Mechanisms"
+      ],
+      "sub_concepts": [
+        {
+          "order": 1,
+          "concept": "Transformer Architecture"
+        },
+        {
+          "order": 2,
+          "concept": "Encoder-Decoder Attention"
+        },
+        {
+          "order": 3,
+          "concept": "Residual Connections"
+        },
+        {
+          "order": 4,
+          "concept": "Layer Normalization"
+        },
+        {
+          "order": 5,
+          "concept": "Feed-Forward Networks"
+        },
+        {
+          "order": 6,
+          "concept": "Position-Wise Feed-Forward Networks"
+        }
+      ],
+      "domain": "Neural Networks and Transformers"
+    },
+    {
+      "order": 4,
+      "priority": 5,
+      "high_level_concept": "Neural Networks and Transformers: Embeddings and Tokenization",
+      "prerequisites": [
+        "Neural Networks and Transformers: Transformer Architecture"
+      ],
+      "sub_concepts": [
+        {
+          "order": 1,
+          "concept": "Embeddings in NLP",
+          "workflows": [
+            {
+              "workflow_id": "embeddings_generation_001",
+              "steps": [
+                {
+                  "order": 1,
+                  "concept": "Define embeddings and their purpose in NLP."
+                },
+                {
+                  "order": 2,
+                  "concept": "Explain the process of generating embeddings from raw text."
+                },
+                {
+                  "order": 3,
+                  "concept": "Discuss common methods: Word2Vec, GloVe, FastText."
+                },
+                {
+                  "order": 4,
+                  "concept": "Illustrate embeddings in vector space."
+                },
+                {
+                  "order": 5,
+                  "concept": "Explain how embeddings capture semantic relationships."
+                },
+                {
+                  "order": 6,
+                  "concept": "Integrate embeddings into NLP models (RNNs, Transformers)."
+                },
+                {
+                  "order": 7,
+                  "concept": "Show applications: sentiment analysis, translation, etc."
+                },
+                {
+                  "order": 8,
+                  "concept": "Highlight fine-tuning embeddings for tasks."
+                },
+                {
+                  "order": 9,
+                  "concept": "Summarize challenges and limitations of embeddings."
+                }
+              ],
+              "similarity_score": 0.6564
+            }
+          ]
+        },
+        {
+          "order": 2,
+          "concept": "Tokenization Techniques",
+          "secondary_workflows": [
+            {
+              "workflow_id": "tokenization_strategies_001",
+              "steps": [
+                {
+                  "order": 1,
+                  "concept": "Define tokenization and its importance in NLP."
+                },
+                {
+                  "order": 2,
+                  "concept": "Explain subword vs word-level tokenization."
+                },
+                {
+                  "order": 3,
+                  "concept": "Discuss Byte-Pair Encoding (BPE) and WordPiece."
+                },
+                {
+                  "order": 4,
+                  "concept": "Show tokenization effect on vocabulary size."
+                },
+                {
+                  "order": 5,
+                  "concept": "Explain impact on model training and inference."
+                },
+                {
+                  "order": 6,
+                  "concept": "Demonstrate tokenization with examples."
+                }
+              ],
+              "similarity_score": 0.6017
+            }
+          ]
+        },
+        {
+          "order": 3,
+          "concept": "Positional Encodings",
+          "workflows": [
+            {
+              "workflow_id": "transformer_components_001",
+              "steps": [
+                {
+                  "order": 1,
+                  "concept": "Define tokenization and its purpose."
+                },
+                {
+                  "order": 2,
+                  "concept": "Explain tokenization into model-ready format."
+                },
+                {
+                  "order": 3,
+                  "concept": "Introduce positional encodings and their necessity."
+                },
+                {
+                  "order": 4,
+                  "concept": "Show how positional encodings encode token order."
+                },
+                {
+                  "order": 5,
+                  "concept": "Define contextual embeddings for word meaning."
+                },
+                {
+                  "order": 6,
+                  "concept": "Explain how context shapes embeddings."
+                },
+                {
+                  "order": 7,
+                  "concept": "Combine tokenization, positional encodings, and embeddings in Transformers."
+                },
+                {
+                  "order": 8,
+                  "concept": "Summarize the importance for Transformer performance."
+                }
+              ],
+              "similarity_score": 0.7143
+            },
+            {
+              "workflow_id": "positional_encoding_001",
+              "steps": [
+                {
+                  "order": 1,
+                  "concept": "Explain why Transformers need positional info."
+                },
+                {
+                  "order": 2,
+                  "concept": "Introduce sinusoidal positional encoding."
+                },
+                {
+                  "order": 3,
+                  "concept": "Explain alternative learnable positional embeddings."
+                },
+                {
+                  "order": 4,
+                  "concept": "Show integration with token embeddings."
+                },
+                {
+                  "order": 5,
+                  "concept": "Visualize effect on sequence modeling."
+                }
+              ],
+              "similarity_score": 0.7066
+            }
+          ]
+        },
+        {
+          "order": 4,
+          "concept": "Contextual Embeddings"
+        },
+        {
+          "order": 5,
+          "concept": "Semantic Meaning in Embedding Spaces",
+          "secondary_workflows": [
+            {
+              "workflow_id": "embedding_spaces_001",
+              "steps": [
+                {
+                  "order": 1,
+                  "concept": "Define embedding spaces for data representation."
+                },
+                {
+                  "order": 2,
+                  "concept": "Map words/items to high-dimensional vectors."
+                },
+                {
+                  "order": 3,
+                  "concept": "Explain distance in embeddings and similarity."
+                },
+                {
+                  "order": 4,
+                  "concept": "Show semantic relationships as vector operations."
+                },
+                {
+                  "order": 5,
+                  "concept": "Provide examples: synonyms, antonyms."
+                },
+                {
+                  "order": 6,
+                  "concept": "Discuss role of data and algorithms in shaping space."
+                },
+                {
+                  "order": 7,
+                  "concept": "Evaluate embedding space quality."
+                },
+                {
+                  "order": 8,
+                  "concept": "Summarize implications in NLP and beyond."
+                }
+              ],
+              "similarity_score": 0.642
+            }
+          ]
+        }
+      ],
+      "domain": "Neural Networks and Transformers"
+    },
+    {
+      "order": 5,
+      "priority": 4,
+      "high_level_concept": "Neural Networks and Transformers: Training & Optimization",
+      "prerequisites": [
+        "Neural Networks and Transformers: Introduction"
+      ],
+      "sub_concepts": [
+        {
+          "order": 1,
+          "concept": "Adam Optimizer"
+        },
+        {
+          "order": 2,
+          "concept": "Learning Rate Scheduling"
+        },
+        {
+          "order": 3,
+          "concept": "Dropout"
+        },
+        {
+          "order": 4,
+          "concept": "Label Smoothing"
+        },
+        {
+          "order": 5,
+          "concept": "Warmup Steps"
+        },
+        {
+          "order": 6,
+          "concept": "Advanced Training Techniques"
+        },
+        {
+          "order": 7,
+          "concept": "Training Costs and Data Requirements"
+        },
+        {
+          "order": 8,
+          "concept": "Transfer Learning and Fine-Tuning",
+          "secondary_workflows": [
+            {
+              "workflow_id": "transfer_learning_llm_001",
+              "steps": [
+                {
+                  "order": 1,
+                  "concept": "Define transfer learning."
+                },
+                {
+                  "order": 2,
+                  "concept": "Explain its importance when labeled data is scarce."
+                },
+                {
+                  "order": 3,
+                  "concept": "Introduce pre-trained models and their use."
+                },
+                {
+                  "order": 4,
+                  "concept": "Apply transfer learning to LLMs."
+                },
+                {
+                  "order": 5,
+                  "concept": "Fine-tune on task-specific datasets."
+                },
+                {
+                  "order": 6,
+                  "concept": "Provide application examples: sentiment analysis, summarization, QA."
+                },
+                {
+                  "order": 7,
+                  "concept": "Summarize benefits: faster training, improved accuracy."
+                }
+              ],
+              "similarity_score": 0.5753
+            },
+            {
+              "workflow_id": "llm_finetuning_001",
+              "steps": [
+                {
+                  "order": 1,
+                  "concept": "Define pretraining: learn general language knowledge."
+                },
+                {
+                  "order": 2,
+                  "concept": "Explain objectives of pretraining."
+                },
+                {
+                  "order": 3,
+                  "concept": "Define fine-tuning: adapt to task-specific datasets."
+                },
+                {
+                  "order": 4,
+                  "concept": "Explain objectives of fine-tuning."
+                },
+                {
+                  "order": 5,
+                  "concept": "Compare datasets: diverse vs. targeted."
+                },
+                {
+                  "order": 6,
+                  "concept": "Compare training durations."
+                },
+                {
+                  "order": 7,
+                  "concept": "Summarize outcomes: versatile vs. specialized models."
+                }
+              ],
+              "similarity_score": 0.555
+            }
+          ]
+        },
+        {
+          "order": 9,
+          "concept": "Domain Adaptation Techniques"
+        },
+        {
+          "order": 10,
+          "concept": "Scaling Large Language Models"
+        },
+        {
+          "order": 11,
+          "concept": "Gradient Clipping"
+        }
+      ],
+      "domain": "Neural Networks and Transformers"
+    },
+    {
+      "order": 6,
+      "priority": 4,
+      "high_level_concept": "Neural Networks and Transformers: Model Deployment and Inference",
+      "prerequisites": [
+        "Neural Networks and Transformers: Transformer Architecture"
+      ],
+      "sub_concepts": [
+        {
+          "order": 1,
+          "concept": "LLM Inference Pipeline",
+          "secondary_workflows": [
+            {
+              "workflow_id": "fine_tuning_pipeline_001",
+              "steps": [
+                {
+                  "order": 1,
+                  "concept": "Select pre-trained LLM for task."
+                },
+                {
+                  "order": 2,
+                  "concept": "Prepare task-specific dataset."
+                },
+                {
+                  "order": 3,
+                  "concept": "Set training hyperparameters."
+                },
+                {
+                  "order": 4,
+                  "concept": "Train model with early stopping."
+                },
+                {
+                  "order": 5,
+                  "concept": "Evaluate on validation set."
+                },
+                {
+                  "order": 6,
+                  "concept": "Iterate with hyperparameter tuning."
+                }
+              ],
+              "similarity_score": 0.5146
+            },
+            {
+              "workflow_id": "llm_deployment_001",
+              "steps": [
+                {
+                  "order": 1,
+                  "concept": "Evaluate trained LLM on validation datasets."
+                },
+                {
+                  "order": 2,
+                  "concept": "Optimize model performance via fine-tuning."
+                },
+                {
+                  "order": 3,
+                  "concept": "Prepare production environment."
+                },
+                {
+                  "order": 4,
+                  "concept": "Containerize model with dependencies."
+                },
+                {
+                  "order": 5,
+                  "concept": "Deploy container to cloud or on-prem server."
+                },
+                {
+                  "order": 6,
+                  "concept": "Create API for model interaction."
+                },
+                {
+                  "order": 7,
+                  "concept": "Implement monitoring for performance and health."
+                },
+                {
+                  "order": 8,
+                  "concept": "Set up auto-scaling mechanisms."
+                },
+                {
+                  "order": 9,
+                  "concept": "Collect user feedback."
+                },
+                {
+                  "order": 10,
+                  "concept": "Maintain and update model regularly."
+                }
+              ],
+              "similarity_score": 0.641
+            }
+          ],
+          "workflows": [
+            {
+              "workflow_id": "llm_inference_pipeline_001",
+              "steps": [
+                {
+                  "order": 1,
+                  "concept": "Receive input text."
+                },
+                {
+                  "order": 2,
+                  "concept": "Tokenize text into tokens."
+                },
+                {
+                  "order": 3,
+                  "concept": "Convert tokens into embeddings."
+                },
+                {
+                  "order": 4,
+                  "concept": "Feed embeddings into the LLM network."
+                },
+                {
+                  "order": 5,
+                  "concept": "Process embeddings through multiple layers."
+                },
+                {
+                  "order": 6,
+                  "concept": "Apply attention mechanisms to capture context."
+                },
+                {
+                  "order": 7,
+                  "concept": "Generate output tokens."
+                },
+                {
+                  "order": 8,
+                  "concept": "Convert tokens to human-readable text."
+                },
+                {
+                  "order": 9,
+                  "concept": "Return generated text as output."
+                }
+              ],
+              "similarity_score": 0.6548
+            }
+          ]
+        },
+        {
+          "order": 2,
+          "concept": "Model Deployment Strategies"
+        },
+        {
+          "order": 3,
+          "concept": "Model Efficiency and Latency",
+          "workflows": [
+            {
+              "workflow_id": "inference_optimization_001",
+              "steps": [
+                {
+                  "order": 1,
+                  "concept": "Define model efficiency and latency."
+                },
+                {
+                  "order": 2,
+                  "concept": "Identify efficiency metrics (throughput, resource use)."
+                },
+                {
+                  "order": 3,
+                  "concept": "Identify latency metrics (response time, delay)."
+                },
+                {
+                  "order": 4,
+                  "concept": "Optimize efficiency via pruning, quantization."
+                },
+                {
+                  "order": 5,
+                  "concept": "Reduce latency via batching or faster hardware."
+                },
+                {
+                  "order": 6,
+                  "concept": "Balance accuracy, efficiency, and latency trade-offs."
+                },
+                {
+                  "order": 7,
+                  "concept": "Monitor efficiency and latency during inference."
+                },
+                {
+                  "order": 8,
+                  "concept": "Review case studies of optimization success."
+                }
+              ],
+              "similarity_score": 0.6772
+            }
+          ]
+        },
+        {
+          "order": 4,
+          "concept": "Parallelism and Model Sharding"
+        },
+        {
+          "order": 5,
+          "concept": "Memory Optimizations"
+        }
+      ],
+      "domain": "Neural Networks and Transformers"
+    },
+    {
+      "order": 7,
+      "priority": 4,
+      "high_level_concept": "Neural Networks and Transformers: Evaluation & Assessment",
+      "prerequisites": [
+        "Neural Networks and Transformers: Training & Optimization"
+      ],
+      "sub_concepts": [
+        {
+          "order": 1,
+          "concept": "Evaluation Metrics for LLMs",
+          "secondary_workflows": [
+            {
+              "workflow_id": "training_objectives_001",
+              "steps": [
+                {
+                  "order": 1,
+                  "concept": "Define common training objectives for LLMs."
+                },
+                {
+                  "order": 2,
+                  "concept": "Explain masked language modeling (MLM)."
+                },
+                {
+                  "order": 3,
+                  "concept": "Explain causal language modeling (CLM)."
+                },
+                {
+                  "order": 4,
+                  "concept": "Discuss cross-entropy loss and perplexity metrics."
+                },
+                {
+                  "order": 5,
+                  "concept": "Illustrate impact on model generalization."
+                }
+              ],
+              "similarity_score": 0.5264
+            },
+            {
+              "workflow_id": "evaluation_metrics_001",
+              "steps": [
+                {
+                  "order": 1,
+                  "concept": "Define evaluation metrics for NLP tasks."
+                },
+                {
+                  "order": 2,
+                  "concept": "Discuss accuracy, F1-score, BLEU, ROUGE."
+                },
+                {
+                  "order": 3,
+                  "concept": "Explain human evaluation importance."
+                },
+                {
+                  "order": 4,
+                  "concept": "Analyze trade-offs between metrics."
+                },
+                {
+                  "order": 5,
+                  "concept": "Apply metrics to benchmark datasets."
+                }
+              ],
+              "similarity_score": 0.5548
+            }
+          ]
+        },
+        {
+          "order": 2,
+          "concept": "Common Datasets and Benchmarks"
+        },
+        {
+          "order": 3,
+          "concept": "Assessing Model Performance",
+          "secondary_workflows": [
+            {
+              "workflow_id": "evaluation_pipeline_001",
+              "steps": [
+                {
+                  "order": 1,
+                  "concept": "Collect model outputs on test datasets."
+                },
+                {
+                  "order": 2,
+                  "concept": "Compute metrics: BLEU, ROUGE, F1, accuracy."
+                },
+                {
+                  "order": 3,
+                  "concept": "Compare against baselines or previous versions."
+                },
+                {
+                  "order": 4,
+                  "concept": "Analyze failure cases and error types."
+                },
+                {
+                  "order": 5,
+                  "concept": "Document results and insights."
+                }
+              ],
+              "similarity_score": 0.5119
+            }
+          ]
+        }
+      ],
+      "domain": "Neural Networks and Transformers"
+    },
+    {
+      "order": 8,
+      "priority": 3,
+      "high_level_concept": "Neural Networks and Transformers: Applications & Practical Challenges",
+      "prerequisites": [
+        "Neural Networks and Transformers: Attention Mechanisms",
+        "Neural Networks and Transformers: Transformer Architecture"
+      ],
+      "sub_concepts": [
+        {
+          "order": 1,
+          "concept": "Natural Language Processing Applications"
+        },
+        {
+          "order": 2,
+          "concept": "Machine Translation Applications"
+        },
+        {
+          "order": 3,
+          "concept": "Image Captioning Applications"
+        },
+        {
+          "order": 4,
+          "concept": "Speech Recognition Applications"
+        },
+        {
+          "order": 5,
+          "concept": "Text Summarization Applications",
+          "secondary_workflows": [
+            {
+              "workflow_id": "use_case_examples_001",
+              "steps": [
+                {
+                  "order": 1,
+                  "concept": "Illustrate common LLM use cases: chatbots, summarization, QA."
+                },
+                {
+                  "order": 2,
+                  "concept": "Explain domain-specific applications: finance, healthcare, legal."
+                },
+                {
+                  "order": 3,
+                  "concept": "Discuss limitations and ethical considerations."
+                },
+                {
+                  "order": 4,
+                  "concept": "Provide best practices for deployment in production."
+                }
+              ],
+              "similarity_score": 0.5404
+            }
+          ]
+        },
+        {
+          "order": 6,
+          "concept": "Question Answering Applications"
+        },
+        {
+          "order": 7,
+          "concept": "Challenges in Training and Deployment"
+        },
+        {
+          "order": 8,
+          "concept": "Computational Complexity and Long-Range Dependencies"
+        },
+        {
+          "order": 9,
+          "concept": "Generalization Issues"
+        }
+      ],
+      "domain": "Neural Networks and Transformers"
+    },
+    {
+      "order": 9,
+      "priority": 3,
+      "high_level_concept": "Neural Networks and Transformers: Research Trends & Innovations",
+      "prerequisites": [
+        "Neural Networks and Transformers: Applications & Practical Challenges"
+      ],
+      "sub_concepts": [
+        {
+          "order": 1,
+          "concept": "Current Trends in Transformer Architectures"
+        },
+        {
+          "order": 2,
+          "concept": "Innovations in Attention Mechanisms"
+        },
+        {
+          "order": 3,
+          "concept": "Future Directions in NLP"
+        }
+      ],
+      "domain": "Neural Networks and Transformers"
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+# Core dependencies
+
+numpy
+pandas
+tqdm
+python-dotenv
+
+# Web Framework
+
+fastapi==0.115.0
+uvicorn==0.30.5
+pydantic==2.9.2
+
+# Database
+
+psycopg2-binary
+supabase
+sqlalchemy
+
+# AI / LLM
+
+openai
+requests
+sentence-transformers
+
+# Frontend/Dashboard
+
+streamlit
+watchdog

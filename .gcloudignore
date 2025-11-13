@@ -1,0 +1,26 @@
+# Never upload environment files
+.env
+
+# Python specific files and local environments
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+env/
+ENV/
+
+# IDE and OS files
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+
+# (Optional) Explicitly include documentation if you ignore *.md somewhere else
+#!PERFORMANCE.md
+#!PROJECT_ROADMAP.md
+#!USER_FLOW.md
