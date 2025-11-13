@@ -15,7 +15,8 @@ st.set_page_config(
 if "student_name" not in st.session_state:
     st.session_state.student_name = ""
 if "api_base_url" not in st.session_state:
-    st.session_state.api_base_url = "http://127.0.0.1:8000"
+    # live Cloud Run URL now
+    st.session_state.api_base_url = "https://teaching-agent-api-946597723332.asia-south1.run.app"
 if "current_lesson" not in st.session_state:
     st.session_state.current_lesson = None # Stores the StepResponse
 if "current_explanation" not in st.session_state:
