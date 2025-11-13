@@ -32,4 +32,3 @@ EXPOSE 8080
 # Command to run the application using Uvicorn
 # We bind to 0.0.0.0 to make it accessible from outside the container
 CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8080"]
-```
