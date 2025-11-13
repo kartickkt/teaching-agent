@@ -1,0 +1,15 @@
+# Environments
+
+.env
+
+# Cache and Dependency Folders
+
+venv/
+.venv/
+pycache/
+*.pyc
+
+# IDE files
+
+.vscode/
+.idea/
