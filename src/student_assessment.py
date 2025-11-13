@@ -13,7 +13,9 @@ from student_profiles import CurriculumManager
 # --- LLM API Configuration ---
 load_dotenv() 
 LLM_MODEL = "gpt-4o-mini"
-MAX_RETRIES = 3
+MAX_RETRIES = 5  # INCREASED RETRIES FOR CLOUD STABILITY
+# Added base delay to wait between retries
+BASE_RETRY_DELAY = 3 
 
 # Initialize the OpenAI client globally (will pick up OPENAI_API_KEY from .env)
 try:
@@ -157,8 +159,8 @@ class AssessmentAgent:
 
             except Exception as e:
                 print(f"OpenAI API Error on attempt {attempt + 1}: {e}")
-
-            time.sleep(2 ** attempt)
+                # Exponential backoff with a minimum delay
+                time.sleep(BASE_RETRY_DELAY * (2 ** attempt))
 
         return "LLM generation failed after multiple retries.", None
 
@@ -218,7 +220,7 @@ class AssessmentAgent:
 
             except Exception as e:
                 print(f"OpenAI Quiz Generation Error on attempt {attempt + 1}: {e}")
-                time.sleep(2 ** attempt)
+                time.sleep(BASE_RETRY_DELAY * (2 ** attempt))
 
         return {"questions": [f"LLM generation failed after {MAX_RETRIES} retries."]}
 
@@ -272,6 +274,6 @@ class AssessmentAgent:
 
             except Exception as e:
                 print(f"OpenAI Grading Error on attempt {attempt + 1}: {e}")
-                time.sleep(2 ** attempt)
+                time.sleep(BASE_RETRY_DELAY * (2 ** attempt))
         
         return {"score": 0.0, "feedback": "LLM grading failed after multiple retries."}
