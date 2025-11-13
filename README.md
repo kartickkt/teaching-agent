@@ -4,6 +4,10 @@ A production-grade adaptive learning system that generates personalized lessons,
 
 This project demonstrates backend engineering, state management, database optimization, and practical GenAI integration in a clean, scalable design.
 
+## 🚀 Live Demo
+Try the interactive version here:  
+👉 https://teaching-agent-6savqkhboahfztm83w9wtj.streamlit.app/
+
 ---
 
 ## Key Architectural Achievements
