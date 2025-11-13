@@ -1,49 +1,118 @@
-# 🤖 Adaptive Teaching Agent (V3)
+# Adaptive Teaching Agent
 
-This is a full-stack MLOps project demonstrating a personalized learning application built around the Neural Network/Transformer curriculum. The agent dynamically generates lessons and grades open-ended quizzes using an LLM, adapting to the student's mastery level in real time.
+A production-grade adaptive learning system that generates personalized lessons, evaluates open-ended responses using an LLM, and updates student mastery in real time. Built as a full-stack microservice architecture with FastAPI, Supabase PostgreSQL, OpenAI GPT-4o-mini, and Streamlit.
 
----
-
-## ✨ Key Architectural Achievements
-
-| **Achievement** | **Description** | **Resume Value** |
-|-----------------|------------------|------------------|
-| **Adaptive Core (EDA)** | Agent selects the next concept based on a calculated priority score, factoring in prerequisites, mastery gaps, and concept priority (`get_next_concept`). | Adaptive Algorithm Design |
-| **LLM-Driven Assessment** | Uses OpenAI (GPT-4o-mini) to dynamically generate and grade unique, open-ended quiz questions, replacing static MCQs. | Dynamic RAG / GenAI Integration |
-| **Weighted Mastery** | Quiz scores are scaled by difficulty (**1.2× Hard**, **0.8× Easy**) before updating the student's persistent mastery score. | Custom Logic / Score Weighting |
-| **N+1 Performance Fix** | Solved a severe PostgreSQL N+1 query bottleneck by implementing a centralized caching proxy, dramatically reducing API latency. | Backend Performance Optimization |
-| **Structured Learning** | Enforces sequential, step-by-step teaching using `curriculum.json` workflows, preventing the LLM from generating long, generic explanations. | Content Structuring / Prompt Engineering |
+This project demonstrates backend engineering, state management, database optimization, and practical GenAI integration in a clean, scalable design.
 
 ---
 
-## 🏗️ Technology Stack
+## Key Architectural Achievements
 
-| **Layer** | **Technologies** | **Role** |
-|----------|------------------|----------|
-| **Backend** | FastAPI (ASGI), Uvicorn | High-performance API serving all business logic |
-| **Frontend/Demo** | Streamlit | Responsive dashboard for user–agent interaction |
-| **Data Persistence** | PostgreSQL (via Supabase) | Secure external store for student profiles & mastery logs |
-| **AI** | OpenAI (GPT-4o-mini) | Generates explanations, quiz questions, and grading |
-| **Deployment** | Docker, Google Cloud Run | Containerization and scalable microservice hosting |
+| Achievement | Description | Technical Focus |
+|------------|-------------|-----------------|
+| **Adaptive Core Sequencer** | Selects the next concept using a custom priority function derived from prerequisites, mastery gaps, and curriculum ordering. | Adaptive Algorithm Design |
+| **LLM-Driven Assessment** | Dynamically generates and grades open-ended quiz questions using GPT-4o-mini, replacing static MCQs. | LLM Integration / Evaluation Pipeline |
+| **Weighted Mastery Update** | Applies difficulty-based multipliers (1.2× Hard, 0.8× Easy) before updating persistent mastery scores. | Scoring Algorithms / Custom Logic |
+| **N+1 Query Elimination** | Replaced repeated DB lookups with a lightweight caching layer, solving a PostgreSQL N+1 bottleneck and reducing latency. | Backend Performance Optimization |
+| **Structured Learning Enforcement** | Uses curriculum.json workflows to enforce step-by-step teaching, ensuring the LLM produces concise, targeted outputs. | Prompt Engineering / Content Structuring |
 
 ---
 
-## 🚀 Getting Started
+## System Architecture
+
+```
+                   ┌──────────────────────┐
+                   │     Streamlit UI     │
+                   └───────────▲──────────┘
+                               │
+                               │ REST API
+                               │
+                   ┌───────────┴──────────┐
+                   │      FastAPI API      │
+                   │  (Business Logic Layer)│
+                   └───────────▲───────────┘
+                               │
+                     LLM Calls │
+                               │
+                   ┌───────────┴───────────┐
+                   │     GPT-4o-mini        │
+                   └───────────▲───────────┘
+                               │
+                     DB Reads  │  DB Writes
+                               │
+                   ┌───────────┴──────────┐
+                   │  Supabase PostgreSQL  │
+                   └───────────────────────┘
+```
+
+---
+
+## Technology Stack
+
+| Layer | Stack | Purpose |
+|-------|--------|----------|
+| Backend | FastAPI (ASGI), Uvicorn | Core adaptive logic, routing, orchestration |
+| Frontend | Streamlit | Interactive student/agent interface |
+| Database | Supabase PostgreSQL | Persistent mastery profiles & logs |
+| AI | OpenAI GPT-4o-mini | Lesson creation, quiz generation, grading |
+| Deployment | Docker, Google Cloud Run | Containerization & scalable backend hosting |
+
+---
+
+## Project Structure
+
+```
+├── api/
+│   └── main.py                 # FastAPI entrypoint (HTTP routes)
+├── src/
+│   ├── student_assessment.py   # Adaptive sequencing + LLM logic
+│   └── student_profiles.py     # DB access layer + caching
+├── data/
+│   └── curriculum.json         # Concepts, prerequisites, steps
+├── dashboard.py                # Streamlit frontend
+├── Dockerfile
+├── requirements.txt
+└── README.md
+```
+
+---
+
+## Getting Started (Local)
 
 ### Install dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
-### Start Backend (Terminal 1)
+### Start Backend
 ```bash
 uvicorn api.main:app --reload --port 8000
 ```
 
-### Start Frontend (Terminal 2)
+### Start Frontend
 ```bash
 streamlit run dashboard.py
 ```
 
-> **Note:**  
-> Secrets are handled via local `.env` and secured using `.gitignore` and `.gcloudignore` for cloud deployment.
+The UI will be available at:
+```
+http://localhost:8501
+```
+
+---
+
+## Deployment Notes
+
+- Backend is deployed on **Google Cloud Run** using Docker.
+- Frontend is deployed via **Streamlit Cloud**.
+- Secrets are handled using:
+  - `.env` locally (ignored via `.gitignore` and `.gcloudignore`)
+  - Cloud environment variables in production
+- Supabase PostgreSQL acts as the external managed database.
+
+---
+
+## Summary
+
+This project implements a scalable, adaptive teaching system using modern backend practices and practical GenAI workflows. It demonstrates real-time mastery modeling, structured LLM prompting, database optimization, and containerized deployment.
+
