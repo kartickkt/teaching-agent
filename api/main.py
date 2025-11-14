@@ -327,18 +327,29 @@ async def teach_step_stream(request: QuizRequest):
     concept_name = request.concept_name
 
     def generate():
-        stream = stream_client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "user", "content": f"Explain the concept: {concept_name}"}
-            ],
-            stream=True
-        )
-        for chunk in stream:
-            token = chunk.choices[0].delta.get("content", "")
-            if token:
-                yield token
-        yield "[END]"
+        print("🔵 Starting streaming request...")
+        try:
+            stream = stream_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "user", "content": f"Explain the concept: {concept_name}"}
+                ],
+                stream=True
+            )
+            print("🟢 Streaming connection established.")
+
+            for chunk in stream:
+                token = chunk.choices[0].delta.get("content", "")
+                if token:
+                    print(f"🟡 Token: {token}")
+                    yield token
+
+            print("🏁 Streaming finished.")
+            yield "[END]"
+
+        except Exception as e:
+            print(f"❌ Streaming Error: {e}")
+            yield f"[ERROR] {e}"
 
     return StreamingResponse(generate(), media_type="text/plain")
 
