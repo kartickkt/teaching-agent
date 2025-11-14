@@ -5,7 +5,7 @@ steps:
       [
         'build',
         '-t',
-        '${LOCATION}-docker.pkg.dev/$PROJECT_ID/${REPO}/teaching-agent-api:$COMMIT_SHA',
+        '${_LOCATION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/teaching-agent-api:$COMMIT_SHA',
         '.'
       ]
 
@@ -14,7 +14,7 @@ steps:
     args:
       [
         'push',
-        '${LOCATION}-docker.pkg.dev/$PROJECT_ID/${REPO}/teaching-agent-api:$COMMIT_SHA'
+        '${_LOCATION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/teaching-agent-api:$COMMIT_SHA'
       ]
 
   # Step 3: Deploy on Cloud Run
@@ -26,7 +26,7 @@ steps:
         'deploy',
         'teaching-agent-api',
         '--image',
-        '${LOCATION}-docker.pkg.dev/$PROJECT_ID/${REPO}/teaching-agent-api:$COMMIT_SHA',
+        '${_LOCATION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/teaching-agent-api:$COMMIT_SHA',
         '--region',
         'asia-south1',
         '--platform',
@@ -45,5 +45,5 @@ substitutions:
   _DB_USER: ""
   _DB_PASS: ""
   _DB_NAME: ""
-LOCATION: 'asia-south1'
-REPO: 'teaching-agent-repo'
+  _LOCATION: "asia-south1"
+  _REPO: "teaching-agent-repo"
