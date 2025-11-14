@@ -176,6 +176,8 @@ def teach_next_lesson_step_streaming():
     concept = lesson["lesson_steps"][step_index]
     api_url = st.session_state.api_base_url
 
+    st.session_state.is_streaming = True  # <-- NEW FLAG
+
     placeholder = st.empty()
     accumulated = ""
 
@@ -195,6 +197,10 @@ def teach_next_lesson_step_streaming():
 
     except Exception as e:
         st.error(f"Error streaming: {e}")
+
+    finally:
+        st.session_state.is_streaming = False  # <-- RESET FLAG
+
 
 
 def handle_explore_select():
@@ -413,10 +419,13 @@ else:
         
     with col2:
         st.subheader("Explanation / Quiz")
-        if st.session_state.current_explanation and not st.session_state.current_quiz:
-            # Explanation in a container to save space
-            with st.container(height=400):
-                st.markdown(st.session_state.current_explanation)
+        if not st.session_state.current_quiz:
+            if "stream_placeholder" not in st.session_state:
+                st.session_state.stream_placeholder = st.empty()
+
+            # Only display static explanation when not streaming
+            if st.session_state.current_explanation and not st.session_state.get("is_streaming", False):
+                st.session_state.stream_placeholder.markdown(st.session_state.current_explanation)
         elif st.session_state.current_quiz:
             # Quiz UI
             quiz = st.session_state.current_quiz
