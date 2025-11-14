@@ -324,24 +324,45 @@ def submit_answer(request: AnswerRequest):
 
 @app.post("/teach_step_stream")
 async def teach_step_stream(request: QuizRequest):
+    """
+    Streams a well-formatted, markdown-friendly explanation for a concept.
+    The response is optimized for readability when streamed into Streamlit.
+    """
     concept_name = request.concept_name
 
     def generate():
         stream = stream_client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "user", "content": f"Explain the concept: {concept_name}"}
+                {
+                    "role": "user",
+                    "content": (
+                        f"Explain the concept **{concept_name}** in clear, structured, student-friendly markdown.\n\n"
+
+                        "### FORMAT STRICTLY LIKE THIS:\n"
+                        "- Use multiple short paragraphs.\n"
+                        "- Insert a blank line between paragraphs.\n"
+                        "- Use bullet points when listing ideas.\n"
+                        "- Use `###` or `####` headings to break sections.\n"
+                        "- Keep each paragraph between 1–3 sentences.\n"
+                        "- DO NOT return one long paragraph.\n"
+                        "- Keep the tone simple and educational.\n"
+                        "- Make it visually readable for a beginner.\n\n"
+
+                        "Now begin the explanation below:\n\n"
+                    )
+                }
             ],
             stream=True
         )
 
         for chunk in stream:
             delta = chunk.choices[0].delta
-            # delta is an object, delta.content is the token string
             if hasattr(delta, "content") and delta.content:
                 yield delta.content
 
-        yield "[END]"
+        # End marker (optional)
+        yield "\n\n[END]"
 
     return StreamingResponse(generate(), media_type="text/plain")
 
