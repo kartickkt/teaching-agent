@@ -12,8 +12,7 @@ from fastapi.responses import StreamingResponse
 from openai import OpenAI
 
 # Initialize streaming OpenAI client
-stream_client = OpenAI()
-
+stream_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # --- Add src to Python Path ---
 # This allows us to import modules from the 'src' directory
