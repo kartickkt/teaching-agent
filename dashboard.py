@@ -162,6 +162,41 @@ def teach_next_lesson_step():
         except requests.exceptions.RequestException as e:
             st.error(f"Error connecting to API (Timeout: 90s): {e}")
 
+def teach_next_lesson_step_streaming():
+    lesson = st.session_state.current_lesson
+    if not lesson:
+        st.warning("Please get a lesson plan first.")
+        return
+
+    step_index = st.session_state.current_step_index
+    if step_index >= len(lesson["lesson_steps"]):
+        st.warning("Lesson complete!")
+        return
+
+    concept = lesson["lesson_steps"][step_index]
+    api_url = st.session_state.api_base_url
+
+    placeholder = st.empty()
+    accumulated = ""
+
+    try:
+        with requests.post(
+            f"{api_url}/teach_step_stream",
+            json={"student_name": lesson["student_name"], "concept_name": concept},
+            stream=True
+        ) as r:
+            for line in r.iter_lines(decode_unicode=True):
+                if line:
+                    accumulated += line
+                    placeholder.markdown(accumulated)
+
+        st.session_state.current_explanation = accumulated
+        st.session_state.current_step_index += 1
+
+    except Exception as e:
+        st.error(f"Error streaming: {e}")
+
+
 def handle_explore_select():
     """
     Called when the Explore dropdown changes.
@@ -361,6 +396,9 @@ else:
             # Lesson Action Buttons
             if st.session_state.current_step_index < len(lesson["lesson_steps"]):
                 st.button("Teach Next Step", on_click=teach_next_lesson_step, type="secondary")
+                st.button("Teach Next Step (Stream)", on_click=teach_next_lesson_step_streaming, type="primary")
+
+                
             else:
                 st.success("Lesson Complete! Ready for your quiz.")
                 

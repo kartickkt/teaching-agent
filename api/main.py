@@ -8,6 +8,12 @@ import sys
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
+from fastapi.responses import StreamingResponse
+from openai import OpenAI
+
+# Initialize streaming OpenAI client
+stream_client = OpenAI()
+
 
 # --- Add src to Python Path ---
 # This allows us to import modules from the 'src' directory
@@ -316,6 +322,27 @@ def submit_answer(request: AnswerRequest):
     except Exception as e:
         print(f"API Error: Failed to update mastery: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to update mastery: {e}")
+
+@app.post("/teach_step_stream")
+async def teach_step_stream(request: QuizRequest):
+    concept_name = request.concept_name
+
+    def generate():
+        stream = stream_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "user", "content": f"Explain the concept: {concept_name}"}
+            ],
+            stream=True
+        )
+        for chunk in stream:
+            token = chunk.choices[0].delta.get("content", "")
+            if token:
+                yield token
+        yield "[END]"
+
+    return StreamingResponse(generate(), media_type="text/plain")
+
 
 if __name__ == "__main__":
     import uvicorn
