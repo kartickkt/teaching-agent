@@ -1,14 +1,14 @@
-# src/student_assessment.py
+# src/student_assessment.py (REVISED)
 import time
 import random
 import json
 import os
 import re
-from typing import Optional, Tuple, Dict, Any
+from typing import Optional, Tuple, Dict, Any, Generator, List
 from dotenv import load_dotenv
 from openai import OpenAI
 # Use absolute imports now that 'src' is a package
-from student_profiles import CurriculumManager
+from .student_profiles import CurriculumManager # Relative import fix for use as a package
 
 # --- LLM API Configuration ---
 load_dotenv() 
@@ -19,17 +19,17 @@ BASE_RETRY_DELAY = 3
 
 # Initialize the OpenAI client globally (will pick up OPENAI_API_KEY from .env)
 try:
-    openai_client = OpenAI(
-        api_key=os.getenv("OPENAI_API_KEY")
-    )
-    if not os.getenv("OPENAI_API_KEY"):
-        print("Warning: OPENAI_API_KEY not found in .env file.")
+    openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    # Separate client for streaming might be overkill, but let's keep it consistent with main.py
+    streaming_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY")) 
 except Exception as e:
-    print(f"Warning: OpenAI client could not be initialized. API calls will fail. Error: {e}")
+    print(f"Warning: OpenAI client could not be initialized. Error: {e}")
     openai_client = None
+    streaming_client = None
 
 def _try_parse_json(text: str) -> Optional[Dict]:
     """Tries to extract a JSON object from a string, even if it's embedded."""
+    # Find the outermost curly braces
     match = re.search(r'\{.*\}', text, re.DOTALL)
     if match:
         try:
@@ -38,204 +38,43 @@ def _try_parse_json(text: str) -> Optional[Dict]:
             return None
     return None
 
-class AssessmentAgent:
-    """
-    Determines the next best concept to teach based on the student's profile 
-    and generates learning materials.
-    """
-    def __init__(self):
-        # Assessment agent relies on the CurriculumManager for data structure
-        # This is a fixed, in-memory copy of the curriculum high-level structure
-        self.high_level_concepts = CurriculumManager.get_high_level_concepts()
-        self.epsilon = 0.01  # Small value to prevent division by zero
-
-    def get_next_concept(self, profile: object) -> Optional[str]:
-        """
-        Calculates the most valuable concept to teach next.
-        Prioritizes unmastered concepts where prerequisites are met, and uses 
-        curriculum priority/order as tie-breakers.
-        
-        Note: 'profile' is expected to be a proxy object (TempProfile) 
-        that implements get_mastery(concept_name).
-        """
-        best_candidate: Optional[str] = None
-        highest_score = -1.0
-
-        if not self.high_level_concepts:
-            print("Error in AssessmentAgent: No high-level concepts were loaded.")
-            return None
-
-        # Iterate over all high-level concepts and their sub-concepts
-        for hl_concept_name, hl_data in self.high_level_concepts.items():
-            
-            # 1. Prerequisite Check
-            prereq_met = True
-            for prereq_name in hl_data.get('prerequisites', []):
-                # We check if the prerequisite high-level concept has been engaged at all
-                if not self._check_high_level_mastery(profile, prereq_name, threshold=0.1):
-                    prereq_met = False
-                    break
-            
-            if not prereq_met:
-                continue
-
-            # 2. Score Calculation for Sub-concepts
-            for sub_concept_data in hl_data.get('sub_concepts', []):
-                sub_concept_name = sub_concept_data.get('concept')
-                if not sub_concept_name:
-                    continue
-
-                # IMPORTANT: Call get_mastery on the proxy profile object
-                current_mastery = profile.get_mastery(sub_concept_name)
-                
-                if current_mastery >= 1.0:
-                    continue  # Skip concepts considered fully mastered
-
-                # Scoring Formula: Priority * (1 / (Current_Mastery + epsilon))
-                priority = hl_data.get('priority', 1)
-                
-                # Relevance score rewards low mastery and high priority
-                relevance_score = priority / (current_mastery + self.epsilon)
-                
-                # Use order as a tie-breaker. Lower order numbers should have higher priority.
-                # We use a large number minus the order to make smaller orders more valuable.
-                order_score = (1000 - hl_data.get('order', 0) * 10) + (10 - sub_concept_data.get('order', 0))
-                
-                combined_score = relevance_score + order_score
-
-                if combined_score > highest_score:
-                    highest_score = combined_score
-                    best_candidate = sub_concept_name
-
-        return best_candidate
-
-    def _check_high_level_mastery(self, profile: object, hl_name: str, threshold: float) -> bool:
-        """
-        Utility to check if a high-level concept has met a basic engagement threshold.
-        Relies on the provided 'profile' object's get_mastery method.
-        """
-        hl_data = self.high_level_concepts.get(hl_name)
-        if not hl_data:
-            return True # If prereq is unknown, assume met for robustness
-        
-        # Check if *any* sub-concept within the high-level prereq has a mastery >= threshold
-        sub_concepts = hl_data.get('sub_concepts', [])
-        if not sub_concepts:
-            return False # No sub-concepts to be mastered
-            
-        for sub_concept_data in sub_concepts:
-            concept_name = sub_concept_data.get('concept')
-            if concept_name and profile.get_mastery(concept_name) >= threshold:
-                return True
-        return False
-
-    def generate_content_for_concept(self, concept_name: str) -> Tuple[str, Optional[Dict[str, Any]]]:
-        """
-        Uses the LLM API (OpenAI) to generate a targeted explanation for a step or a concept.
-        """
-        if not openai_client:
-            return "LLM generation failed: Client not initialized (check API Key).", None
-
-        # The 'concept_name' here can be a full concept OR a structured step concept
-        system_prompt = f"You are a friendly and expert AI tutor in 'Neural Networks and Transformers'. Your task is to provide a concise, engaging explanation of the concept or step: '{concept_name}' suitable for a university student, using simple analogies. The explanation must be clearly structured."
-        user_query = f"Provide an explanation of the topic: {concept_name}."
-
-        print(f"\n--- Generating content for '{concept_name}' using {LLM_MODEL}... ---")
-        
-        for attempt in range(MAX_RETRIES):
-            try:
-                response = openai_client.chat.completions.create(
-                    model=LLM_MODEL,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_query}
-                    ],
-                    temperature=0.7,
-                    max_tokens=1024 # Increased token limit to prevent cut-offs
-                )
-                
-                text = response.choices[0].message.content
-                return text, None
-
-            except Exception as e:
-                print(f"OpenAI API Error on attempt {attempt + 1}: {e}")
-                # Exponential backoff with a minimum delay
-                time.sleep(BASE_RETRY_DELAY * (2 ** attempt))
-
-        return "LLM generation failed after multiple retries.", None
-
-    def generate_quiz(self, concept_name: str, difficulty: str = "medium") -> Dict[str, Any]:
-        """
-        NEW: Generates a short, open-ended quiz for a concept using the LLM.
-        """
-        if not openai_client:
-            return {"questions": ["LLM client not initialized."]}
-
-        # Adjust prompt based on difficulty
-        if difficulty == "easy":
-            difficulty_prompt = "Generate 3 straightforward, conceptual questions."
-            temp = 0.3
-        elif difficulty == "hard":
-            difficulty_prompt = "Generate 3 complex, problem-solving, application-based questions."
-            temp = 0.8
-        else: # medium
-            difficulty_prompt = "Generate 3 open-ended questions balancing concept and application."
-            temp = 0.5
-
-        system_prompt = f"You are an expert AI educator. {difficulty_prompt} for the given concept. Return ONLY a valid JSON object."
-        user_query = f"""
+# --- Versioned Prompt Templates ---
+class PromptTemplates:
+    """Central place to store LLM prompt templates."""
+    
+    # 1. Diagnostic / Final Quiz Generation Prompt
+    QUIZ_SYSTEM = (
+        "You are an expert AI assessment engine. Generate a diagnostic quiz for the concept "
+        "provided. The quiz must contain exactly {num_mcq} Multiple Choice Questions (MCQ) "
+        "and exactly {num_open} short, open-ended answer questions. "
+        "The questions should cover concept and application. Return ONLY a single, valid JSON object."
+    )
+    QUIZ_USER = """
         Concept: "{concept_name}"
 
-        Format:
+        JSON Format:
         {{
-          "questions": [
-            "Your first open-ended question here...",
-            "Your second open-ended question here...",
-            "Your third open-ended question here..."
+          "mcq": [
+            {{
+              "question": "MCQ question 1...",
+              "options": ["A", "B", "C", "D"],
+              "answer": "The correct option letter (e.g., B)"
+            }},
+            // ... up to {num_mcq} MCQs
+          ],
+          "open_questions": [
+            "Short answer question 1...",
+            // ... up to {num_open} open-ended questions
           ]
         }}
         """
-        print(f"\n--- Generating {difficulty} quiz for '{concept_name}'... ---")
-        
-        for attempt in range(MAX_RETRIES):
-            try:
-                response = openai_client.chat.completions.create(
-                    model=LLM_MODEL,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_query}
-                    ],
-                    response_format={"type": "json_object"},
-                    temperature=temp,
-                )
-                
-                content = response.choices[0].message.content
-                parsed_json = _try_parse_json(content)
-                
-                if parsed_json and "questions" in parsed_json:
-                    # We enforce exactly 3 questions here for consistent UI flow
-                    return {"questions": parsed_json["questions"][:3]} 
-                else:
-                    raise ValueError("Failed to parse quiz questions.")
 
-            except Exception as e:
-                print(f"OpenAI Quiz Generation Error on attempt {attempt + 1}: {e}")
-                time.sleep(BASE_RETRY_DELAY * (2 ** attempt))
-
-        return {"questions": [f"LLM generation failed after {MAX_RETRIES} retries."]}
-
-
-    def grade_answer(self, concept_name: str, question: str, user_answer: str) -> Dict[str, Any]:
-        """
-        NEW: Grades a student's open-ended answer using an LLM rubric.
-        Optimized prompt for faster response.
-        """
-        if not openai_client:
-            return {"score": 0.0, "feedback": "LLM client not initialized."}
-
-        # Simplified prompt structure to minimize LLM thinking time and token usage
-        system_prompt = "You are a fast, precise, and fair AI grader. Grade the student's answer (0.0 to 1.0) and provide *brief*, constructive feedback. Respond ONLY with the JSON object."
-        user_query = f"""
+    # 2. Open-Answer Grading Prompt
+    GRADING_SYSTEM = (
+        "You are a fast, precise, and fair AI grader. Grade the student's answer (0.0 to 1.0) "
+        "and provide *brief*, constructive feedback (max 2 sentences). Respond ONLY with the JSON object."
+    )
+    GRADING_USER = """
         Concept: "{concept_name}"
         Question: "{question}"
         Student's Answer: "{user_answer}"
@@ -248,7 +87,44 @@ class AssessmentAgent:
           "feedback": "A short, concise critique."
         }}
         """
-        print(f"\n--- Grading answer for '{concept_name}'... ---")
+    
+    # 3. Structured Content Generation Prompt (for fixed teaching flow)
+    # The 'fixed_flow_step' is used to inject the specific stage (e.g., 'What it is', 'Why/Need')
+    TEACHING_SYSTEM_FIXED = (
+        "You are a friendly and expert AI tutor in 'Neural Networks and Transformers'. "
+        "Explain the step '{fixed_flow_step}' of the concept '{hl_concept}' in clear, "
+        "structured, student-friendly markdown, using simple analogies."
+    )
+    TEACHING_USER_FIXED = "Generate the explanation now."
+    
+    # 4. Standard Content Generation Prompt (for chat/general explanation)
+    TEACHING_SYSTEM_GENERIC = (
+        "You are a friendly and expert AI tutor in 'Neural Networks and Transformers'. "
+        "Explain the concept or step: '{concept_name}' suitable for a university student, "
+        "using simple analogies. The explanation must be clearly structured."
+    )
+    TEACHING_USER_GENERIC = "Provide an explanation of the topic: {concept_name}."
+
+
+class AssessmentAgent:
+    """
+    Handles LLM-based content generation, quizzing, and grading.
+    """
+    def __init__(self):
+        self.high_level_concepts = CurriculumManager.get_high_level_concepts()
+
+    # NOTE: get_next_concept is deprecated in this new flow.
+    # It remains here only if other legacy parts depend on it.
+
+    def generate_diagnostic_quiz(self, concept_name: str, num_mcq: int, num_open: int) -> Dict[str, Any]:
+        """
+        Generates the combined diagnostic/final quiz (MCQ + Open-ended) in one call.
+        """
+        if not openai_client:
+            return {"status": "error", "quiz": {"mcq": [], "open_questions": ["LLM client not initialized."]}}
+
+        system_prompt = PromptTemplates.QUIZ_SYSTEM.format(num_mcq=num_mcq, num_open=num_open)
+        user_query = PromptTemplates.QUIZ_USER.format(concept_name=concept_name, num_mcq=num_mcq, num_open=num_open)
 
         for attempt in range(MAX_RETRIES):
             try:
@@ -259,14 +135,57 @@ class AssessmentAgent:
                         {"role": "user", "content": user_query}
                     ],
                     response_format={"type": "json_object"},
-                    temperature=0.0, # Zero temperature for consistent grading
+                    temperature=0.7,
+                )
+                
+                content = response.choices[0].message.content
+                parsed_json = _try_parse_json(content)
+                
+                if parsed_json and "mcq" in parsed_json and "open_questions" in parsed_json:
+                    # Return the two list types needed by the new flow
+                    return {
+                        "mcq": parsed_json["mcq"][:num_mcq],
+                        "open_questions": parsed_json["open_questions"][:num_open]
+                    } 
+                else:
+                    raise ValueError("Failed to parse the combined quiz JSON.")
+
+            except Exception as e:
+                print(f"OpenAI Quiz Generation Error on attempt {attempt + 1}: {e}")
+                time.sleep(BASE_RETRY_DELAY * (2 ** attempt))
+
+        return {"mcq": [], "open_questions": [f"LLM generation failed after {MAX_RETRIES} retries."]}
+
+
+    def grade_answer(self, concept_name: str, question: str, user_answer: str) -> Dict[str, Any]:
+        """
+        Grades a student's open-ended answer using an LLM rubric (0.0 to 1.0).
+        (This method is unchanged, now using the central prompt template)
+        """
+        if not openai_client:
+            return {"score": 0.0, "feedback": "LLM client not initialized."}
+
+        system_prompt = PromptTemplates.GRADING_SYSTEM
+        user_query = PromptTemplates.GRADING_USER.format(
+            concept_name=concept_name, question=question, user_answer=user_answer
+        )
+
+        for attempt in range(MAX_RETRIES):
+            try:
+                response = openai_client.chat.completions.create(
+                    model=LLM_MODEL,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_query}
+                    ],
+                    response_format={"type": "json_object"},
+                    temperature=0.0, 
                 )
                 
                 content = response.choices[0].message.content
                 parsed_json = _try_parse_json(content)
 
                 if parsed_json and "score" in parsed_json and "feedback" in parsed_json:
-                    # Ensure score is a float between 0 and 1
                     parsed_json["score"] = max(0.0, min(1.0, float(parsed_json["score"])))
                     return parsed_json
                 else:
@@ -277,3 +196,59 @@ class AssessmentAgent:
                 time.sleep(BASE_RETRY_DELAY * (2 ** attempt))
         
         return {"score": 0.0, "feedback": "LLM grading failed after multiple retries."}
+
+    def generate_streaming_content(self, hl_concept: str, concept_name: str, fixed_flow: Optional[List[Tuple[str, str]]] = None) -> Generator[str, None, None]:
+        """
+        Generates explanation content using the LLM and streams chunks back.
+        Uses either the fixed teaching flow or a generic prompt.
+        """
+        if not streaming_client:
+            yield json.dumps({"error": "LLM Streaming Client not initialized."})
+            return
+
+        # Determine System/User prompts based on fixed flow structure
+        if fixed_flow:
+            # Fixed flow: Generate content sequentially for each step in the flow
+            for step_name, _ in fixed_flow:
+                system_prompt = PromptTemplates.TEACHING_SYSTEM_FIXED.format(
+                    fixed_flow_step=step_name, hl_concept=hl_concept
+                )
+                user_query = PromptTemplates.TEACHING_USER_FIXED
+                
+                # Yield a separator to indicate the start of the next section
+                yield f"\n\n## 💡 {step_name} ({concept_name})\n\n"
+                
+                # Generate and yield content for this step
+                stream = streaming_client.chat.completions.create(
+                    model=LLM_MODEL,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_query}
+                    ],
+                    temperature=0.7,
+                    stream=True
+                )
+
+                for chunk in stream:
+                    delta = chunk.choices[0].delta
+                    if hasattr(delta, "content") and delta.content:
+                        yield delta.content
+        else:
+            # Generic/Workflow Step: Generate content for the single step/concept name
+            system_prompt = PromptTemplates.TEACHING_SYSTEM_GENERIC.format(concept_name=concept_name)
+            user_query = PromptTemplates.TEACHING_USER_GENERIC.format(concept_name=concept_name)
+
+            stream = streaming_client.chat.completions.create(
+                model=LLM_MODEL,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_query}
+                ],
+                temperature=0.7,
+                stream=True
+            )
+
+            for chunk in stream:
+                delta = chunk.choices[0].delta
+                if hasattr(delta, "content") and delta.content:
+                    yield delta.content
