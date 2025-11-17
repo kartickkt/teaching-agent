@@ -1,74 +1,27 @@
-# src/student_profiles.py (REVISED)
+# src/student_profiles.py
 """
-Manages persistent student profiles and mastery state using Supabase/Postgres.
-Includes support for sequential lesson progress and Exponential Moving Average (EMA) mastery model.
+Unified student profile storage using a SINGLE Supabase/Postgres table:
+- student_name (PK)
+- current_lesson_order (INT)
+- completed_lessons (JSONB)
+- mastery (JSONB: concept_name → mastery_score)
 """
+
 import os
 import json
 import psycopg2
-from datetime import datetime
-from typing import Dict, Any, List, Optional
 from dotenv import load_dotenv
+from typing import Dict, Any, Optional, List
+from datetime import datetime
 
-# Load environment variables for DB connection
-load_dotenv() 
+load_dotenv()
 
 # ----------------------------
-# Curriculum Management (In-Memory)
-# ----------------------------
-CURRICULUM_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'curriculum.json')
-
-class CurriculumManager:
-    """Manages loading and providing access to the curriculum structure."""
-    _data: Optional[Dict[str, Any]] = None
-    _high_level_map: Optional[Dict[str, Dict[str, Any]]] = None
-    
-    @classmethod
-    def load_curriculum(cls) -> Dict[str, Any]:
-        # ... (Unchanged load_curriculum implementation) ...
-        if cls._data is None:
-            try:
-                with open(CURRICULUM_FILE, 'r') as f:
-                    cls._data = json.load(f)
-            except Exception as e:
-                print(f"Error loading curriculum.json: {e}")
-                cls._data = {"concepts": []}
-        return cls._data
-
-    @classmethod
-    def get_all_sub_concepts(cls) -> List[str]:
-        # ... (Unchanged get_all_sub_concepts implementation) ...
-        data = cls.load_curriculum()
-        concepts = []
-        for high_level_concept in data.get("concepts", []):
-            for sub_concept in high_level_concept.get("sub_concepts", []):
-                concept_name = sub_concept.get("concept")
-                if concept_name:
-                    concepts.append(concept_name)
-        return concepts
-
-    @classmethod
-    def get_high_level_concepts(cls) -> Dict[str, Any]:
-        """Returns the high-level concept structure indexed by name."""
-        if cls._high_level_map is None:
-            data = cls.load_curriculum()
-            cls._high_level_map = {c['high_level_concept']: c for c in data.get("concepts", [])}
-        return cls._high_level_map
-
-    @classmethod
-    def get_high_level_by_order(cls, order: int) -> Optional[Dict[str, Any]]:
-        """Retrieves a high-level concept by its sequential order number."""
-        data = cls.load_curriculum()
-        for concept in data.get("concepts", []):
-            if concept.get('order') == order:
-                return concept
-        return None
-# ----------------------------
-# DB Connection and Persistence
+# DB Connection
 # ----------------------------
 
 def get_db_connection():
-    # ... (Unchanged get_db_connection implementation) ...
+    """Connects to Supabase Postgres."""
     try:
         conn = psycopg2.connect(
             host=os.getenv("DB_HOST"),
@@ -76,206 +29,201 @@ def get_db_connection():
             dbname=os.getenv("DB_NAME"),
             user=os.getenv("DB_USER"),
             password=os.getenv("DB_PASS"),
-            connect_timeout=10,
             sslmode="require",
+            connect_timeout=10
         )
         return conn
     except Exception as e:
-        print(f"❌ DATABASE CONNECTION FAILED: {e}")
-        raise RuntimeError("Failed to connect to the database.") from e
+        print(f"❌ DB CONNECTION FAILED: {e}")
+        raise
 
 
-class StudentProfileDB:
-    """Manages student profile, mastery, and sequencing using Postgres."""
+# ----------------------------
+# Curriculum Manager (unchanged)
+# ----------------------------
 
-    def __init__(self):
-        pass # Connections are made per operation
+import json
+import os
+CURRICULUM_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "curriculum.json")
 
-    def _execute_query(self, query: str, params: tuple = ()) -> Optional[List[tuple]]:
-        # ... (Unchanged _execute_query implementation) ...
+class CurriculumManager:
+    _data = None
+    _flat = None
+
+    @classmethod
+    def load(cls):
+        if cls._data is None:
+            try:
+                with open(CURRICULUM_FILE, "r") as f:
+                    cls._data = json.load(f)
+            except:
+                cls._data = {"concepts": []}
+        return cls._data
+
+    @classmethod
+    def get_high_level_concepts(cls):
+        data = cls.load()
+        return {c["high_level_concept"]: c for c in data.get("concepts", [])}
+
+    @classmethod
+    def get_high_level_by_order(cls, order: int):
+        for c in cls.load().get("concepts", []):
+            if c.get("order") == order:
+                return c
+        return None
+
+
+# ----------------------------
+# Student Profile (NEW CLEAN VERSION)
+# ----------------------------
+
+class StudentProfile:
+    """
+    Stores ALL student state inside ONE table:
+    - current_lesson_order
+    - completed_lessons
+    - mastery (mapping each concept → mastery score)
+    """
+
+    TABLE = "student_profiles"
+
+    def _exec(self, query: str, params: tuple = (), fetch=False):
         conn = None
         try:
             conn = get_db_connection()
-            cursor = conn.cursor()
-            cursor.execute(query, params)
-            
-            if query.strip().lower().startswith('select'):
-                results = cursor.fetchall()
-                cursor.close()
-                return results
-            else:
-                conn.commit()
-                cursor.close()
-                return None
-        except psycopg2.Error as e:
-            print(f"Database Error: {e}")
+            cur = conn.cursor()
+            cur.execute(query, params)
+            if fetch:
+                rows = cur.fetchall()
+                cur.close()
+                return rows
+            conn.commit()
+            cur.close()
+        except Exception as e:
             if conn:
                 conn.rollback()
-            raise
+            print("SQL ERROR:", e)
+            return None
         finally:
             if conn:
                 conn.close()
 
-    def _get_student_id(self, name: str) -> Optional[int]:
-        # ... (Unchanged _get_student_id implementation) ...
-        try:
-            results = self._execute_query("SELECT id FROM students WHERE name = %s", (name,))
-            return results[0][0] if results else None
-        except Exception:
-            return None
+    # ----------------------------
+    # Registration
+    # ----------------------------
 
-    def register_student(self, name: str, level: str = "beginner"):
-        """Registers a student if they don't exist, initializing current_lesson_order."""
-        student_id = self._get_student_id(name)
-        if student_id is None:
-            date = datetime.now().isoformat()
-            try:
-                # IMPORTANT: Added 'current_lesson_order' to the students table (default 1)
-                self._execute_query(
-                    "INSERT INTO students (name, level, registration_date, current_lesson_order) VALUES (%s, %s, %s, %s)",
-                    (name, level, date, 1),
-                )
-                print(f"✅ Registered new student: {name}")
-            except Exception as e:
-                print(f"⚠️ Could not register student {name}: {e}")
-        else:
-            # We assume the 'students' table is modified to include current_lesson_order
-            pass
-
-# --- NEW PROGRESS TRACKING METHODS ---
-
-    def get_progress(self, name: str) -> Dict[str, Any]:
-        """Retrieves the student's sequential progress state (current lesson & completed lessons)."""
-        student_id = self._get_student_id(name)
-        if not student_id:
-            return {"current_lesson_order": 1, "completed_lessons": []}
-        
-        # NOTE: This assumes 'students' table has 'current_lesson_order' (INT) and 
-        # 'completed_lessons' (JSONB or TEXT array) columns.
-        query = "SELECT current_lesson_order, completed_lessons FROM students WHERE id = %s"
-        results = self._execute_query(query, (student_id,))
-
-        if results:
-            current_order, completed_lessons_json = results[0]
-            
-            # Assuming 'completed_lessons' is stored as a JSON string/JSONB array of lesson orders
-            if isinstance(completed_lessons_json, str):
-                try:
-                    completed_lessons = json.loads(completed_lessons_json)
-                except (json.JSONDecodeError, TypeError):
-                    completed_lessons = []
-            elif isinstance(completed_lessons_json, list):
-                 completed_lessons = completed_lessons_json
-            else:
-                 completed_lessons = []
-
-
-            # Ensure current_order is at least 1
-            current_order = max(1, current_order if current_order is not None else 1)
-
-            return {
-                "current_lesson_order": current_order,
-                "completed_lessons": [int(l) for l in completed_lessons] # Ensure orders are integers
-            }
-        
-        return {"current_lesson_order": 1, "completed_lessons": []}
-
-    def update_progress(self, name: str, new_lesson_order: int, completed_lesson_order: Optional[int] = None):
-        """Updates the student's current lesson order and optionally marks a lesson as completed."""
-        self.register_student(name)
-        student_id = self._get_student_id(name)
-        if not student_id:
+    def register_student(self, name: str):
+        """Creates a profile row if missing."""
+        exists = self._exec(
+            f"SELECT student_name FROM {self.TABLE} WHERE student_name = %s",
+            (name,),
+            fetch=True,
+        )
+        if exists:
             return
 
-        # 1. Get existing data
-        progress = self.get_progress(name)
-        current_completed = set(progress.get("completed_lessons", []))
-        
-        # 2. Add completed lesson if provided
-        if completed_lesson_order is not None:
-            current_completed.add(completed_lesson_order)
-
-        completed_lessons_list = sorted(list(current_completed))
-        completed_lessons_json = json.dumps(completed_lessons_list)
-        
-        # 3. Update the database record
-        update_query = """
-        UPDATE students 
-        SET current_lesson_order = %s, completed_lessons = %s 
-        WHERE id = %s
-        """
-        self._execute_query(
-            update_query,
-            (new_lesson_order, completed_lessons_json, student_id)
+        self._exec(
+            f"""
+            INSERT INTO {self.TABLE} 
+            (student_name, current_lesson_order, completed_lessons, mastery)
+            VALUES (%s, %s, %s, %s)
+            """,
+            (name, 1, json.dumps([]), json.dumps({})),
         )
-        print(f"🔄 Progress updated. Current Lesson: {new_lesson_order}. Completed: {completed_lessons_list}")
+        print(f"✅ Registered new student: {name}")
 
-# --- EMA MASTERY METHODS (Unchanged/Refined) ---
+    # ----------------------------
+    # Progress
+    # ----------------------------
 
-    def get_mastery(self, name: str, concept: str) -> float:
-        # ... (Unchanged get_mastery implementation) ...
-        student_id = self._get_student_id(name)
-        if not student_id:
-            return 0.0
+    def get_progress(self, name: str) -> Dict[str, Any]:
+        self.register_student(name)
 
-        # We now track mastery for both sub-concepts (detailed) AND high-level concepts (summary)
-        results = self._execute_query(
-            "SELECT mastery FROM mastery WHERE student_id = %s AND concept = %s",
-            (student_id, concept)
+        rows = self._exec(
+            f"""
+            SELECT current_lesson_order, completed_lessons
+            FROM {self.TABLE}
+            WHERE student_name = %s
+            """,
+            (name,),
+            fetch=True,
         )
-        return float(results[0][0]) if results else 0.0
+
+        if not rows:
+            return {"current_lesson_order": 1, "completed_lessons": []}
+
+        current_order, completed_json = rows[0]
+
+        if isinstance(completed_json, str):
+            try:
+                completed = json.loads(completed_json)
+            except:
+                completed = []
+        else:
+            completed = completed_json or []
+
+        return {
+            "current_lesson_order": current_order,
+            "completed_lessons": completed,
+        }
+
+    def update_progress(self, name: str, new_order: int, completed: Optional[int]):
+        self.register_student(name)
+        prog = self.get_progress(name)
+
+        completed_set = set(prog["completed_lessons"])
+        if completed:
+            completed_set.add(completed)
+
+        completed_json = json.dumps(sorted(list(completed_set)))
+
+        self._exec(
+            f"""
+            UPDATE {self.TABLE}
+            SET current_lesson_order = %s,
+                completed_lessons = %s
+            WHERE student_name = %s
+            """,
+            (new_order, completed_json, name),
+        )
+
+    # ----------------------------
+    # Mastery
+    # ----------------------------
 
     def get_all_mastery(self, name: str) -> Dict[str, float]:
-        # ... (Unchanged get_all_mastery implementation) ...
-        student_id = self._get_student_id(name)
-        if not student_id:
+        self.register_student(name)
+
+        rows = self._exec(
+            f"SELECT mastery FROM {self.TABLE} WHERE student_name = %s",
+            (name,),
+            fetch=True,
+        )
+
+        if not rows:
             return {}
 
-        results = self._execute_query(
-            "SELECT concept, mastery FROM mastery WHERE student_id = %s",
-            (student_id,)
+        mastery_json = rows[0][0]
+
+        if isinstance(mastery_json, str):
+            try:
+                return json.loads(mastery_json)
+            except:
+                return {}
+
+        return mastery_json or {}
+
+    def update_mastery(self, name: str, concept: str, score: float, alpha: float = 0.3):
+        """EMA update inside the mastery JSON."""
+        mastery = self.get_all_mastery(name)
+        prev = mastery.get(concept, 0.0)
+
+        new = (1 - alpha) * prev + alpha * score
+        mastery[concept] = round(new, 4)
+
+        self._exec(
+            f"UPDATE {self.TABLE} SET mastery = %s WHERE student_name = %s",
+            (json.dumps(mastery), name),
         )
-        return {concept: float(mastery) for concept, mastery in results} if results else {}
 
-    def update_mastery(self, name: str, concept: str, score: float, alpha: float = 0.3) -> float:
-        """Updates the mastery level using exponential moving average (EMA)."""
-        self.register_student(name)
-        student_id = self._get_student_id(name)
-        if not student_id:
-            return 0.0
-
-        prev_mastery = self.get_mastery(name, concept)
-        # EMA Formula: New_Mastery = (1 - alpha) * Prev_Mastery + alpha * Score
-        new_mastery = (1 - alpha) * prev_mastery + alpha * score
-        new_mastery = max(0.0, min(1.0, new_mastery)) # Clamp 0 to 1
-        now = datetime.now().isoformat()
-        
-        upsert_query = """
-        INSERT INTO mastery (student_id, concept, mastery, last_updated)
-        VALUES (%s, %s, %s, %s)
-        ON CONFLICT (student_id, concept)
-        DO UPDATE SET
-            mastery = EXCLUDED.mastery,
-            last_updated = EXCLUDED.last_updated;
-        """
-        
-        try:
-            self._execute_query(
-                upsert_query,
-                (student_id, concept, new_mastery, now)
-            )
-        except Exception as e:
-            print(f"Error during mastery UPSERT for {concept}: {e}")
-            return 0.0
-        
-        return new_mastery
-
-# Renaming the primary class to avoid confusion with the previous version
-StudentProfile = StudentProfileDB
-
-# --- IMPORTANT DATABASE ASSUMPTIONS ---
-# The 'students' table must be modified to include:
-# 1. current_lesson_order INT DEFAULT 1
-# 2. completed_lessons JSONB (or TEXT) DEFAULT '[]'
-#
-# The 'mastery' table must continue to track mastery per named concept (sub-concept name or high-level concept name).
+        return new
