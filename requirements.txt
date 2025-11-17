@@ -1,21 +1,13 @@
-numpy
-pandas
-tqdm
-python-dotenv
-
 fastapi==0.115.0
 uvicorn==0.30.5
 pydantic==2.9.2
+python-dotenv==1.0.0
+requests==2.31.0
+openai==1.0.0
+psycopg2-binary==2.9.7
+sqlalchemy==1.4.49
+pandas==2.1.1
+numpy==1.26.2
 
-psycopg2-binary
-supabase
-sqlalchemy
-
-openai
-requests
-
-# Frontend/Dashboard
-streamlit
-watchdog
-
-
+# frontend (if you bundle; otherwise Streamlit runs separately)
+streamlit==1.26.0
