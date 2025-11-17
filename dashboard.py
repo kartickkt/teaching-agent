@@ -60,42 +60,6 @@ def api_get(path: str, timeout: Optional[int] = None):
         st.error(f"Network/API error GET {path}: {e}")
         return None
 
-# -------------------------
-# Student registration
-# -------------------------
-with st.sidebar:
-    st.title("🤖 Student & API")
-    new_api = st.text_input("FastAPI URL", value=st.session_state.api_base_url, key="new_api_url")
-    if st.button("Set API URL"):
-        if new_api:
-            st.session_state.api_base_url = new_api.strip()
-            st.toast("API URL updated", icon="🔁")
-        else:
-            st.warning("Enter a valid URL")
-
-    name_input = st.text_input("Student Name", key="student_name_input", placeholder="e.g., Kartick")
-    if st.button("Register / Select Student"):
-        name = name_input.strip()
-        if not name:
-            st.warning("Please enter a student name.")
-        else:
-            resp = api_post("/register_student", {"student_name": name}, timeout=10)
-            if resp and resp.status_code == 200:
-                st.session_state.student_name = name
-                st.toast(f"Student selected: {name}", icon="✅")
-                # refresh program status automatically
-                get_program_status()
-            else:
-                st.error("Failed to register student. Check backend logs.")
-
-    st.markdown("---")
-    st.markdown("**Quick Controls**")
-    if st.button("Refresh Program Status"):
-        get_program_status()
-    if st.button("Refresh Mastery Dashboard"):
-        load_mastery_dashboard()
-    st.write("API:", st.session_state.api_base_url)
-
 # provide helper functions referenced in sidebar above (defined after they are used)
 def get_program_status(lesson_order_override: Optional[int] = None):
     if not st.session_state.student_name:
@@ -145,6 +109,43 @@ def load_mastery_dashboard():
         st.success("Mastery dashboard loaded.")
     except Exception as e:
         st.error(f"Failed to load mastery: {e}")
+
+# -------------------------
+# Student registration
+# -------------------------
+with st.sidebar:
+    st.title("🤖 Student & API")
+    new_api = st.text_input("FastAPI URL", value=st.session_state.api_base_url, key="new_api_url")
+    if st.button("Set API URL"):
+        if new_api:
+            st.session_state.api_base_url = new_api.strip()
+            st.toast("API URL updated", icon="🔁")
+        else:
+            st.warning("Enter a valid URL")
+
+    name_input = st.text_input("Student Name", key="student_name_input", placeholder="e.g., Kartick")
+    if st.button("Register / Select Student"):
+        name = name_input.strip()
+        if not name:
+            st.warning("Please enter a student name.")
+        else:
+            resp = api_post("/register_student", {"student_name": name}, timeout=10)
+            if resp and resp.status_code == 200:
+                st.session_state.student_name = name
+                st.toast(f"Student selected: {name}", icon="✅")
+                # refresh program status automatically
+                get_program_status()
+            else:
+                st.error("Failed to register student. Check backend logs.")
+
+    st.markdown("---")
+    st.markdown("**Quick Controls**")
+    if st.button("Refresh Program Status"):
+        get_program_status()
+    if st.button("Refresh Mastery Dashboard"):
+        load_mastery_dashboard()
+    st.write("API:", st.session_state.api_base_url)
+
 
 # -------------------------
 # Practice helpers
