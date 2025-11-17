@@ -34,10 +34,12 @@ init_state("stream_placeholder", None)
 init_state("current_explanation", "")
 init_state("mastery_dashboard_data", None)
 init_state("practice_quiz", None)      # holds practice quiz object
-init_state("practice_answers", {})     # mapping qid -> selected index
+init_state("practice_answers", {})     # mapping qid -> selected index or option text
 init_state("practice_difficulty", "medium")
 init_state("practice_concept", None)
 init_state("api_timeout", 30)
+# NEW: track which sub-concept index we're teaching
+init_state("current_sub_concept_index", 0)
 
 # -------------------------
 # API helpers
@@ -60,7 +62,9 @@ def api_get(path: str, timeout: Optional[int] = None):
         st.error(f"Network/API error GET {path}: {e}")
         return None
 
-# provide helper functions referenced in sidebar above (defined after they are used)
+# -------------------------
+# Helpers used by sidebar controls
+# -------------------------
 def get_program_status(lesson_order_override: Optional[int] = None):
     if not st.session_state.student_name:
         st.warning("Register a student first on the sidebar.")
@@ -83,7 +87,7 @@ def get_program_status(lesson_order_override: Optional[int] = None):
             if quiz and isinstance(quiz, dict):
                 # Normalize shape: ensure keys mcq/open_questions exist
                 mcq = quiz.get("mcq") or quiz.get("mcqs") or quiz.get("questions") or []
-                open_q = quiz.get("open_questions") or quiz.get("opens") or quiz.get("open_questions", []) or []
+                open_q = quiz.get("open_questions") or quiz.get("opens") or quiz.get("openQ") or []
                 st.session_state.current_quiz_data = {"mcq": mcq, "open_questions": open_q}
                 # Reset answer storage
                 st.session_state.mcq_answers_storage = {}
@@ -185,7 +189,6 @@ def submit_practice_quiz():
         qid = q.get("id") or q.get("question")[:40]
         selected = st.session_state.practice_answers.get(qid)
         # support different quiz shapes:
-        # - q may have 'answer_index' or 'answer' (index or text)
         answer_index = q.get("answer_index")
         answer_value = q.get("answer")  # could be index or string
         options = q.get("options") or q.get("choices") or []
@@ -213,7 +216,7 @@ def submit_practice_quiz():
             correct += 1
 
     score = correct / max(1, len(questions))
-    # Optionally call backend to record practice score
+    # Call backend to record practice score (expects body with score)
     payload = {
         "student_name": st.session_state.student_name,
         "hl_concept_name": st.session_state.practice_quiz.get("concept_name"),
@@ -222,7 +225,6 @@ def submit_practice_quiz():
     }
     with st.spinner("Submitting practice score..."):
         r = api_post("/practice/submit_score", payload, timeout=15)
-        # backend may accept payload with score in body even if signature expects query param
         if r:
             try:
                 r.raise_for_status()
@@ -231,10 +233,10 @@ def submit_practice_quiz():
                 load_mastery_dashboard()
                 st.session_state.practice_quiz = None
             except Exception as e:
-                # Even if server returns error, show local score
                 st.warning(f"Practice score local: {score:.2%}. Backend submit error: {e}")
         else:
             st.warning(f"Practice score local: {score:.2%}")
+
 
 # -------------------------
 # Streaming helper
@@ -267,19 +269,24 @@ def stream_teaching_step(lesson_order: int, concept_name: str):
         for chunk in r.iter_lines(decode_unicode=True):
             if not chunk:
                 continue
-            accumulated += chunk
+            # chunk may be part of streamed markdown; append
+            accumulated += chunk + "\n"
             # basic safety: stop if backend indicated error
             if accumulated.strip().lower().startswith("{") and "error" in accumulated.lower():
                 placeholder.error(accumulated)
                 break
             # render progressively
-            placeholder.markdown(accumulated)
+            try:
+                placeholder.markdown(accumulated)
+            except Exception:
+                placeholder.text(accumulated)
         st.session_state.current_explanation = accumulated
         st.success("Streaming finished.")
     except Exception as e:
         st.error(f"Streaming error: {e}")
     finally:
         st.session_state.is_streaming = False
+
 
 # -------------------------
 # UI: Page
@@ -311,31 +318,42 @@ with tab1:
         st.markdown(f"**Status:** {state.get('status', 'unknown')}")
         st.markdown(f"**Lesson:** {state.get('lesson_name') or state.get('high_level_name') } (Order {state.get('lesson_order')})")
 
-        if state.get("status") in ["diagnostic_required", "passed_diagnostic"]:
+        # -------------------------
+        # DIAGNOSTIC / GATE (also used as final quiz when loaded)
+        # -------------------------
+        quiz = st.session_state.current_quiz_data
+        if state.get("status") in ["diagnostic_required", "passed_diagnostic"] or quiz:
+            # render diagnostic (or final, if loaded)
             st.subheader("Diagnostic / Gate")
-            quiz = st.session_state.current_quiz_data
             if not quiz:
                 st.info("Diagnostic quiz not found. Click Load / Refresh.")
             else:
                 # Render MCQs
                 st.markdown("#### Multiple Choice (Part 1)")
                 for i, q in enumerate(quiz.get("mcq", [])):
-                    qid = q.get("id") or f"m{i+1}"
+                    qid = q.get("id") or q.get("question")[:40] or f"m{i+1}"
                     question_text = q.get("question") or q.get("text") or ""
                     options = q.get("options") or q.get("choices") or []
                     # pre-select if present
                     default_index = None
-                    if st.session_state.mcq_answers_storage.get(qid) in options:
-                        default_index = options.index(st.session_state.mcq_answers_storage.get(qid))
-                    sel = st.radio(question_text, options, index=default_index or 0, key=f"diag_mcq_{qid}")
-                    # save selection
+                    if isinstance(st.session_state.mcq_answers_storage.get(qid), str) and options:
+                        try:
+                            default_index = options.index(st.session_state.mcq_answers_storage.get(qid))
+                        except ValueError:
+                            default_index = None
+                    # streamlit radio requires a valid index
+                    index_to_use = default_index if default_index is not None else 0
+                    sel = st.radio(question_text, options, index=index_to_use, key=f"diag_mcq_{qid}")
+                    # save selection (store option text)
                     st.session_state.mcq_answers_storage[qid] = sel
 
                 st.markdown("#### Short Open Answers (Part 2)")
                 for i, q in enumerate(quiz.get("open_questions", [])):
+                    # support q being either string or dict
+                    qtext = q.get("question") if isinstance(q, dict) else str(q)
                     key = f"diag_open_{i}"
                     default_text = st.session_state.open_answers_storage.get(key, "")
-                    txt = st.text_area(q, value=default_text, key=key, height=120)
+                    txt = st.text_area(qtext, value=default_text, key=key, height=120)
                     st.session_state.open_answers_storage[key] = txt
 
                 # Submit diagnostic
@@ -352,7 +370,11 @@ with tab1:
                         })
                     open_subs = []
                     for i, q in enumerate(quiz.get("open_questions", [])):
-                        open_subs.append({"question": q, "user_answer": st.session_state.open_answers_storage.get(f"diag_open_{i}", "")})
+                        qtext = q.get("question") if isinstance(q, dict) else str(q)
+                        open_subs.append({
+                            "question": qtext,
+                            "user_answer": st.session_state.open_answers_storage.get(f"diag_open_{i}", "")
+                        })
                     payload = {
                         "student_name": st.session_state.student_name,
                         "lesson_order": state.get("lesson_order"),
@@ -367,12 +389,14 @@ with tab1:
                         try:
                             r.raise_for_status()
                             st.session_state.current_lesson_state = r.json()
-                            # If passed and contains options, show them
-                            st.success("Diagnostic graded. Check options on right column.")
+                            st.success("Diagnostic graded. Check options / teaching flow below.")
                         except Exception as e:
                             st.error(f"Error submitting diagnostic: {e}")
 
-        elif state.get("status") in ["start_teaching", "lesson_failed"]:
+        # -------------------------
+        # STRUCTURED TEACHING
+        # -------------------------
+        if state.get("status") in ["start_teaching", "lesson_failed"]:
             st.subheader("Structured Teaching")
             sub_list = state.get("sub_concepts_list") or []
             idx = st.session_state.get("current_sub_concept_index", 0)
@@ -390,16 +414,62 @@ with tab1:
                     if st.session_state.current_explanation:
                         st.session_state.current_sub_concept_index = min(len(sub_list), idx + 1)
             else:
-                st.success("All sub-concepts covered. Start final lesson quiz when ready.")
+                st.success("All sub-concepts covered. Load or submit the final lesson quiz when ready.")
                 if st.button("Load Final Lesson Quiz"):
-                    # reuse the original diagnostic as final if server provides quiz; otherwise call start to reload
+                    # reuse start_program to get a quiz (same format)
                     get_program_status(state.get("lesson_order"))
+                    st.toast("Final quiz loaded (diagnostic endpoint used as final).", icon="🧪")
 
-        elif state.get("status") == "passed_diagnostic":
-            # show pass options (skip or study)
+                # If final quiz is loaded in current_quiz_data, render submit button
+                final_quiz = st.session_state.current_quiz_data
+                if final_quiz:
+                    st.markdown("You have a final quiz loaded. Review it in the Diagnostic section above and press the button below to submit as final.")
+                    if st.button("Submit Final Quiz & Grade"):
+                        # assemble payload same as diagnostic submit but POST to finish_quiz
+                        mcq_answers = []
+                        for q in final_quiz.get("mcq", []):
+                            qid = q.get("id") or q.get("question")[:40]
+                            mcq_answers.append({
+                                "question": q.get("question"),
+                                "options": q.get("options"),
+                                "user_selection": st.session_state.mcq_answers_storage.get(qid),
+                                "answer": q.get("answer") or q.get("answer_index")
+                            })
+                        open_subs = []
+                        for i, q in enumerate(final_quiz.get("open_questions", [])):
+                            qtext = q.get("question") if isinstance(q, dict) else str(q)
+                            open_subs.append({
+                                "question": qtext,
+                                "user_answer": st.session_state.open_answers_storage.get(f"diag_open_{i}", "")
+                            })
+                        payload = {
+                            "student_name": st.session_state.student_name,
+                            "lesson_order": state.get("lesson_order"),
+                            "submissions": {
+                                "mcq_answers": mcq_answers,
+                                "open_questions": open_subs
+                            }
+                        }
+                        r = api_post("/program/finish_quiz", payload, timeout=60)
+                        if r:
+                            try:
+                                r.raise_for_status()
+                                st.session_state.current_lesson_state = r.json()
+                                st.success("Final quiz graded. Progress and mastery updated.")
+                                # reset sub concept index for next lesson
+                                st.session_state.current_sub_concept_index = 0
+                                # refresh program status
+                                time.sleep(0.5)
+                                get_program_status()
+                            except Exception as e:
+                                st.error(f"Error submitting final quiz: {e}")
+
+        # -------------------------
+        # PASSED DIAGNOSTIC (options)
+        # -------------------------
+        if state.get("status") == "passed_diagnostic":
             st.success(f"Passed diagnostic (score {state.get('score',0):.2%}).")
             if st.button("Skip to Next Lesson"):
-                # call skip (submit with skip_mode True)
                 payload = {
                     "student_name": st.session_state.student_name,
                     "lesson_order": state.get("lesson_order"),
@@ -414,13 +484,19 @@ with tab1:
                         st.toast(res.get("message","Skipped"), icon="⏭️")
                         # reload new lesson status
                         time.sleep(0.5)
+                        # reset streaming / explanation
+                        st.session_state.current_explanation = ""
+                        st.session_state.current_sub_concept_index = 0
                         get_program_status()
                     except Exception as e:
                         st.error(f"Skip failed: {e}")
             if st.button("Study this Lesson Anyway"):
-                # transition locally to start teaching state (server already returned options)
-                # simplest approach: call submit_diagnostic with skip_mode False but no submissions to force teaching start
-                payload = {"student_name": st.session_state.student_name, "lesson_order": state.get("lesson_order"), "submissions": {"mcq_answers": [], "open_questions": []}, "skip_mode": False}
+                payload = {
+                    "student_name": st.session_state.student_name,
+                    "lesson_order": state.get("lesson_order"),
+                    "submissions": {"mcq_answers": [], "open_questions": []},
+                    "skip_mode": False
+                }
                 r = api_post("/program/submit_diagnostic", payload, timeout=20)
                 if r:
                     try:
@@ -470,11 +546,9 @@ with tab2:
                 qtext = q.get("question") or q.get("text") or ""
                 options = q.get("options") or q.get("choices") or []
                 st.markdown(f"**Q{i+1}. {qtext}**")
-                default_index = 0
-                # present as radio; store selection as index
                 if options:
                     sel = st.radio(f"Select (Q{i+1})", options, index=0, key=f"practice_{qid}")
-                    # update practice_answers as the option string - we'll map later
+                    # update practice_answers as the option string
                     st.session_state.practice_answers[qid] = sel
                 else:
                     st.text("Question options missing in this question data.")

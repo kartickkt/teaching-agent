@@ -1,4 +1,4 @@
-# api/main.py (STABLE REVISED)
+# api/main.py (FINAL PRODUCTION VERSION)
 """
 FastAPI application to serve the teaching agent logic with the new 
 Sequential Gated Flow (9 Ordered Lessons, Diagnostic Gates).
@@ -31,12 +31,7 @@ if src_dir not in sys.path:
 try:
     from src.student_profiles import StudentProfile, CurriculumManager
     from src.student_assessment import AssessmentAgent, LLM_MODEL
-    from src.student_teaching_loop import (
-        TeachingLoopService,
-        flatten_sub_concepts,
-        load_concepts,
-        WORKFLOWS_JSON
-    )
+    from src.student_teaching_loop import TeachingLoopService, WORKFLOWS_JSON
 except Exception as e:
     logger.error(f"❌ Failed to import backend modules: {e}")
     raise
@@ -65,14 +60,11 @@ try:
     db_profile = StudentProfile()
     assessment_agent = AssessmentAgent()
 
-    all_concepts_data = flatten_sub_concepts(load_concepts(WORKFLOWS_JSON))
-
     logger.info("✅ FastAPI server startup complete. Agents and curriculum loaded.")
 except Exception as e:
     logger.error(f"❌ Startup initialization failed: {e}")
     db_profile = None
     assessment_agent = None
-    all_concepts_data = []
 
 
 # ----------------------------------------------------
@@ -81,17 +73,21 @@ except Exception as e:
 class StudentRequest(BaseModel):
     student_name: str = Field(..., example="Kartick_Test_Student")
 
+
 class LessonOrderRequest(StudentRequest):
     lesson_order: Optional[int] = Field(None, description="Optional override to jump to a specific lesson.")
+
 
 class QuizSubmission(BaseModel):
     mcq_answers: List[Dict[str, Any]]
     open_questions: List[Dict[str, Any]]
 
+
 class SubmitDiagnosticRequest(StudentRequest):
     lesson_order: int
     submissions: QuizSubmission
     skip_mode: bool = False
+
 
 class DiagnosticResponse(BaseModel):
     status: str
@@ -102,27 +98,37 @@ class DiagnosticResponse(BaseModel):
     message: Optional[str] = None
     completed_lessons: Optional[List[int]] = None
 
+
 class FinalQuizRequest(SubmitDiagnosticRequest):
     pass
+
 
 class FinalQuizResponse(BaseModel):
     status: str
     score: float
     next_lesson_order: int
-    message: str
+    message: Optional[str] = None
     grading_details: Optional[Dict[str, Any]] = None
+
 
 class TeachingStepRequest(StudentRequest):
     lesson_order: int
     concept_name: str
 
+
 class MasteryDashboardResponse(BaseModel):
     student_name: str
     dashboard_data: List[Dict[str, Any]]
 
+
 class PracticeQuizRequest(StudentRequest):
     hl_concept_name: str
     difficulty: str = "medium"
+
+
+# FIXED: proper full request model for practice submit
+class PracticeSubmitRequest(PracticeQuizRequest):
+    score: float
 
 
 # ----------------------------------------------------
@@ -212,11 +218,16 @@ def generate_practice_quiz_endpoint(request: PracticeQuizRequest):
         raise HTTPException(500, f"Error generating practice quiz: {e}")
 
 
+# FIXED: clean practice submit endpoint
 @app.post("/practice/submit_score")
-def submit_practice_quiz_score_endpoint(request: PracticeQuizRequest, score: float):
+def submit_practice_quiz_score_endpoint(request: PracticeSubmitRequest):
     service = TeachingLoopService(request.student_name)
     try:
-        return service.submit_practice_quiz_score(request.hl_concept_name, score, request.difficulty)
+        return service.submit_practice_quiz_score(
+            request.hl_concept_name,
+            request.score,
+            request.difficulty
+        )
     except Exception as e:
         logger.error(f"practice/submit_score error: {e}")
         raise HTTPException(500, f"Error submitting practice score: {e}")

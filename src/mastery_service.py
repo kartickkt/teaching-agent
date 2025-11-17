@@ -1,91 +1,115 @@
-# src/mastery_service.py (NEW FILE)
-from typing import Dict, Any, Optional
+# src/mastery_service.py (FINAL CORRECT VERSION)
+from typing import Dict, Any, Optional, List
 from .student_profiles import StudentProfile, CurriculumManager
-from .student_assessment import AssessmentAgent
+from .student_assessment import grade_answer
 
 # --- Constants ---
 DIFFICULTY_ALPHAS = {
-    "diagnostic": 0.3, # Medium impact for diagnostic
-    "final": 0.4,      # Higher impact for passing the final test
-    "practice": 0.1    # Low impact for practice mode
+    "diagnostic": 0.3,
+    "final": 0.4,
+    "practice": 0.1
 }
 
 class MasteryService:
-    """Handles grading, composite score calculation, and EMA updates."""
+    """
+    Handles:
+    - MCQ + open-answer grading
+    - Composite score calculation
+    - EMA mastery updates inside student_profiles.mastery JSON
+    """
 
     def __init__(self, profile: StudentProfile):
         self.profile = profile
-        self.agent = AssessmentAgent()
 
-    def grade_composite_quiz(self, concept_name: str, quiz_submissions: Dict[str, Any], quiz_type: str) -> Dict[str, Any]:
-        """
-        Calculates the composite score based on MCQ (out of 5) and open answers (out of 3).
-        Total Max Score = 8 points.
-        """
+    # --------------------------------------------------------
+    # COMPOSITE SCORING
+    # --------------------------------------------------------
+    def grade_composite_quiz(self, concept_name: str, quiz_submissions: Dict[str, Any], quiz_type: str):
         
-        mcq_answers = quiz_submissions.get('mcq_answers', [])
-        open_questions = quiz_submissions.get('open_questions', [])
-        
-        # 1. MCQ Grading (Assuming the client provides the correct answer key for quick local grading)
-        # NOTE: For security, the backend should ideally store and grade against the true answer key.
-        # Assuming for now 'mcq_answers' contains the generated question, user_answer, and the correct 'answer' key.
+        mcq_answers = quiz_submissions.get("mcq_answers", [])
+        open_questions = quiz_submissions.get("open_questions", [])
+
+        # --- MCQ grading (client sends correct answer temporarily)
         mcq_correct = 0
         for ans in mcq_answers:
-             # Basic check: if the user's selected option matches the correct answer key from the quiz generation
-             if ans.get('user_selection') == ans.get('answer'): 
-                 mcq_correct += 1
-        mcq_score_raw = mcq_correct # Score out of 5
-        
-        # 2. Open-Answer Grading (LLM Call - auto-graded, short answers)
-        open_score_sum = 0.0
-        graded_open_answers = []
-        
-        # Open answers structure should be: [{"question": Q1, "answer": A1}, ...]
-        for submission in open_questions: 
-            question = submission.get('question', 'N/A')
-            answer = submission.get('user_answer', '')
-            
-            grade_result = self.agent.grade_answer(concept_name, question, answer)
-            open_score_sum += grade_result.get('score', 0.0) # Sum of 0.0 to 1.0 scores
-            graded_open_answers.append({**submission, **grade_result})
+            if ans.get("user_selection") == ans.get("answer"):
+                mcq_correct += 1
 
-        # 3. Composite Score Calculation
-        # Total score is (MCQ count) + (Sum of LLM scores from 0-3)
-        # Max Score = 5 (MCQ) + 3 (Open) = 8
-        total_score_raw = mcq_score_raw + open_score_sum
-        composite_score = total_score_raw / 8.0 
+        mcq_score_raw = mcq_correct  # out of 5
+
+        # --- Open answers (LLM-based scoring)
+        open_score_sum = 0.0
+        graded_open = []
+
+        for submission in open_questions:
+            question = submission.get("question")
+            user_answer = submission.get("user_answer")
+
+            # LLM call
+            result = grade_answer(concept_name, question, user_answer)
+            open_score_sum += result.get("score", 0.0)
+
+            graded_open.append({
+                "question": question,
+                "user_answer": user_answer,
+                "score": result.get("score", 0.0),
+                "feedback": result.get("feedback", "")
+            })
+
+        total_raw = mcq_score_raw + open_score_sum      # max = 8
+        composite = total_raw / 8.0
 
         return {
             "mcq_correct": mcq_correct,
             "open_score_sum": open_score_sum,
-            "total_score_raw": total_score_raw,
-            "composite_score": composite_score,
-            "graded_open_answers": graded_open_answers
+            "total_score_raw": total_raw,
+            "composite_score": composite,
+            "graded_open_answers": graded_open
         }
 
-    def update_lesson_mastery(self, student_name: str, lesson_data: Dict[str, Any], final_score: float, quiz_type: str = "final"):
-        """
-        Updates EMA mastery for all sub-concepts and the high-level concept.
-        """
-        hl_concept_name = lesson_data["high_level_concept"]
-        sub_concepts = lesson_data.get('sub_concepts', [])
-        
-        # Alpha tune based on quiz type (as requested)
-        sub_concept_alpha = DIFFICULTY_ALPHAS.get(quiz_type, 0.4) 
-        hl_concept_alpha = 0.1 # Keep high-level mastery more stable
-        
-        # 1. Update Sub-Concept Mastery (Propagate final score to all sub-concepts)
+    # --------------------------------------------------------
+    # MASTERY UPDATES
+    # --------------------------------------------------------
+    def update_lesson_mastery(self, student_name: str, lesson_data: Dict[str, Any], final_score: float, quiz_type="final"):
+
+        hl_name = lesson_data["high_level_concept"]
+        sub_concepts = lesson_data.get("sub_concepts", [])
+
+        alpha_sub = DIFFICULTY_ALPHAS.get(quiz_type, 0.4)
+        alpha_hl  = 0.1
+
+        # --------------------------------------------
+        # Update sub-concepts with EMA
+        # --------------------------------------------
         for sub in sub_concepts:
-            sub_name = sub["concept"]
-            self.profile.update_mastery(student_name, sub_name, final_score, alpha=sub_concept_alpha)
-            
-        # 2. Calculate and Update High-Level Mastery
+            name = sub["concept"]
+            self.profile.update_mastery(
+                student_name,
+                name,
+                final_score,
+                alpha=alpha_sub
+            )
+
+        # --------------------------------------------
+        # Update high-level mastery = avg(sub concept mastery)
+        # --------------------------------------------
         if sub_concepts:
-            # Calculate the average mastery across all sub-concepts after the update
-            new_sub_masteries = [self.profile.get_mastery(student_name, sub["concept"]) for sub in sub_concepts]
-            weighted_average_mastery = sum(new_sub_masteries) / len(sub_concepts)
-            
-            # Update the high-level concept mastery using the calculated average
-            self.profile.update_mastery(student_name, hl_concept_name, weighted_average_mastery, alpha=hl_concept_alpha)
-            
-        return self.profile.get_mastery(student_name, hl_concept_name)
+            mastery_map = self.profile.get_all_mastery(student_name)
+
+            sub_scores = [
+                mastery_map.get(sub["concept"], 0.0)
+                for sub in sub_concepts
+            ]
+
+            if sub_scores:
+                avg_sub_mastery = sum(sub_scores) / len(sub_scores)
+                self.profile.update_mastery(
+                    student_name,
+                    hl_name,
+                    avg_sub_mastery,
+                    alpha=alpha_hl
+                )
+
+        # Return latest HL mastery
+        mastery_map = self.profile.get_all_mastery(student_name)
+        return mastery_map.get(hl_name, 0.0)
