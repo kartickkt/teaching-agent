@@ -29,9 +29,9 @@ if src_dir not in sys.path:
 # Import core modules with safe error handling
 # ----------------------------------------------------
 try:
-    from student_profiles import StudentProfile, CurriculumManager
-    from student_assessment import AssessmentAgent, LLM_MODEL
-    from student_teaching_loop import (
+    from src.student_profiles import StudentProfile, CurriculumManager
+    from src.student_assessment import AssessmentAgent, LLM_MODEL
+    from src.student_teaching_loop import (
         TeachingLoopService,
         flatten_sub_concepts,
         load_concepts,
