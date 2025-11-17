@@ -11,3 +11,4 @@ numpy==1.26.2
 
 # frontend (if you bundle; otherwise Streamlit runs separately)
 streamlit==1.26.0
+
