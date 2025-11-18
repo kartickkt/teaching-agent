@@ -26,15 +26,15 @@ init_state("api_base_url", "https://teaching-agent-api-946597723332.asia-south1.
 init_state("current_lesson_order", 1)
 init_state("completed_lessons", [])
 init_state("current_lesson_state", None)
-init_state("current_quiz_data", None)  # holds diagnostic or final quiz (mcq + open_questions)
-init_state("mcq_answers_storage", {})  # mapping question_id/text -> selected option index or option text
-init_state("open_answers_storage", {})  # mapping open index -> text
+init_state("current_quiz_data", None)
+init_state("mcq_answers_storage", {})
+init_state("open_answers_storage", {})
 init_state("is_streaming", False)
 init_state("stream_placeholder", None)
 init_state("current_explanation", "")
 init_state("mastery_dashboard_data", None)
-init_state("practice_quiz", None)      # holds practice quiz object
-init_state("practice_answers", {})     # mapping qid -> selected index or option text
+init_state("practice_quiz", None)
+init_state("practice_answers", {})
 init_state("practice_difficulty", "medium")
 init_state("practice_concept", None)
 init_state("api_timeout", 30)
@@ -63,7 +63,7 @@ def api_get(path: str, timeout: Optional[int] = None):
         return None
 
 # -------------------------
-# Helpers used by sidebar controls
+# Helpers
 # -------------------------
 def get_program_status(lesson_order_override: Optional[int] = None):
     if not st.session_state.student_name:
@@ -75,9 +75,8 @@ def get_program_status(lesson_order_override: Optional[int] = None):
     with st.spinner("Fetching program status..."):
         r = api_post("/program/start", payload, timeout=30)
 
-        # 🔍 DEBUG: See EXACT backend response
         st.write("DEBUG /program/start response:", r.text if r else "NO RESPONSE")
-        
+
         if not r:
             return
         try:
@@ -86,7 +85,6 @@ def get_program_status(lesson_order_override: Optional[int] = None):
             st.session_state.current_lesson_state = state
             st.session_state.current_lesson_order = state.get("lesson_order", st.session_state.current_lesson_order)
             st.session_state.completed_lessons = state.get("completed_lessons", [])
-            # If diagnostic present, store quiz
             quiz = state.get("quiz")
 
             def normalize_quiz(q):
@@ -106,6 +104,7 @@ def get_program_status(lesson_order_override: Optional[int] = None):
                 st.session_state.open_answers_storage = {}
             else:
                 st.session_state.current_quiz_data = None
+
             st.success("Program status loaded.")
         except Exception as e:
             st.error(f"Failed to parse program status response: {e}")
@@ -126,11 +125,8 @@ def load_mastery_dashboard():
     except Exception as e:
         st.error(f"Failed to load mastery: {e}")
 
-# -------------------------
 # Curriculum helper for practice dropdown
-# -------------------------
 def load_hl_concepts():
-    # cache result in session_state
     if st.session_state.hl_concepts_cache is not None:
         return st.session_state.hl_concepts_cache
     r = api_get("/curriculum/high_level", timeout=10)
@@ -148,7 +144,7 @@ def load_hl_concepts():
         return []
 
 # -------------------------
-# Student registration
+# Sidebar
 # -------------------------
 with st.sidebar:
     st.title("🤖 Student & API")
@@ -157,7 +153,6 @@ with st.sidebar:
         if new_api:
             st.session_state.api_base_url = new_api.strip()
             st.toast("API URL updated", icon="🔁")
-            # clear caches
             st.session_state.hl_concepts_cache = None
         else:
             st.warning("Enter a valid URL")
@@ -172,8 +167,6 @@ with st.sidebar:
             if resp and resp.status_code == 200:
                 st.session_state.student_name = name
                 st.toast(f"Student selected: {name}", icon="✅")
-                # refresh program status automatically
-                # clear practice state when student changes
                 st.session_state.practice_quiz = None
                 st.session_state.practice_answers = {}
                 get_program_status()
@@ -187,7 +180,6 @@ with st.sidebar:
     if st.button("Refresh Mastery Dashboard"):
         load_mastery_dashboard()
     st.write("API:", st.session_state.api_base_url)
-
 
 # -------------------------
 # Practice helpers
@@ -208,7 +200,6 @@ def generate_practice_quiz(hl_concept: str, difficulty: str):
         try:
             r.raise_for_status()
             q = r.json()
-            # Expect { "concept_name":..., "questions":[{id,text,options,...}] }
             st.session_state.practice_quiz = q
             st.session_state.practice_answers = {}
             st.toast("Practice quiz ready", icon="📝")
@@ -256,7 +247,7 @@ def submit_practice_quiz():
         "score": score
     }
     with st.spinner("Submitting practice score..."):
-        r = api_post("/practice/submit_score", payload, timeout=15)
+        r = api_post("/practice/submit_score", payload, timeout=5)
         if r:
             try:
                 r.raise_for_status()
@@ -267,7 +258,6 @@ def submit_practice_quiz():
                 st.warning(f"Practice score local: {score:.2%}. Backend submit error: {e}")
         else:
             st.warning(f"Practice score local: {score:.2%}")
-
 
 # -------------------------
 # Streaming helper
@@ -315,9 +305,8 @@ def stream_teaching_step(lesson_order: int, concept_name: str):
     finally:
         st.session_state.is_streaming = False
 
-
 # -------------------------
-# UI: Page
+# UI
 # -------------------------
 st.title("Adaptive Teaching Agent — Sequential Course")
 st.markdown("Use the Guided Flow to pass lessons sequentially. Use Practice Mode to pick any topic and practice MCQs.")
@@ -326,11 +315,10 @@ if not st.session_state.student_name:
     st.info("Please register/select a student in the sidebar to proceed.")
     st.stop()
 
-# Tabs
 tab1, tab2, tab3 = st.tabs(["💡 Guided Flow (Sequential)", "📝 Practice MCQs", "📊 Mastery Dashboard"])
 
 # -------------------------
-# Tab 1: Guided Flow (Sequential)
+# Tab 1: Guided Flow
 # -------------------------
 with tab1:
     st.header(f"Guided Flow — Lesson {st.session_state.current_lesson_order}")
@@ -346,7 +334,7 @@ with tab1:
         st.markdown(f"**Status:** {state.get('status', 'unknown')}")
         st.markdown(f"**Lesson:** {state.get('lesson_name') or state.get('high_level_name') } (Order {state.get('lesson_order')})")
 
-        # DIAGNOSTIC / GATE
+        # DIAGNOSTIC
         quiz = st.session_state.current_quiz_data
         if state.get("status") == "diagnostic_required" or quiz:
             st.subheader("Diagnostic / Gate")
@@ -456,7 +444,7 @@ with tab1:
 
                 final_quiz = st.session_state.current_quiz_data
                 if final_quiz:
-                    st.markdown("You have a final quiz loaded. Review it in the Diagnostic section above and press the button below to submit as final.")
+                    st.markdown("You have a final quiz loaded. Review it above and press the button below to submit as final.")
                     if st.button("Submit Final Quiz & Grade"):
                         mcq_answers = []
                         for q in final_quiz.get("mcq", []):
@@ -489,14 +477,18 @@ with tab1:
                                 st.session_state.current_lesson_state = r.json()
                                 st.success("Final quiz graded. Progress and mastery updated.")
                                 st.session_state.current_sub_concept_index = 0
-                                time.sleep(0.5)
                                 get_program_status()
+                                st.rerun()
                             except Exception as e:
                                 st.error(f"Error submitting final quiz: {e}")
 
-        # PASSED DIAGNOSTIC (options)
+        # PASSED DIAGNOSTIC — OPTIONS
         if state.get("status") == "passed_diagnostic":
             st.success(f"Passed diagnostic (score {state.get('score',0):.2%}).")
+
+            # ----------------------
+            # ✔ FIXED SKIP BUTTON
+            # ----------------------
             if st.button("Skip to Next Lesson"):
                 payload = {
                     "student_name": st.session_state.student_name,
@@ -504,18 +496,25 @@ with tab1:
                     "submissions": {"mcq_answers": [], "open_questions": []},
                     "skip_mode": True
                 }
-                r = api_post("/program/submit_diagnostic", payload, timeout=20)
+
+                r = api_post("/program/submit_diagnostic", payload, timeout=10)
+
                 if r:
                     try:
                         r.raise_for_status()
                         res = r.json()
-                        st.toast(res.get("message","Skipped"), icon="⏭️")
-                        time.sleep(0.5)
+
                         st.session_state.current_explanation = ""
                         st.session_state.current_sub_concept_index = 0
+
+                        st.success("Lesson skipped → Loading next lesson...")
                         get_program_status()
+                        st.rerun()
+
                     except Exception as e:
                         st.error(f"Skip failed: {e}")
+
+            # STUDY ANYWAY
             if st.button("Study this Lesson Anyway"):
                 payload = {
                     "student_name": st.session_state.student_name,
@@ -543,7 +542,7 @@ with tab1:
         if st.session_state.current_explanation:
             placeholder.markdown(st.session_state.current_explanation)
         else:
-            placeholder.info("No explanation streamed yet. Use 'Teach Next' to stream content for current sub-concept.")
+            placeholder.info("No explanation streamed yet. Use 'Teach Next'.")
 
 # -------------------------
 # Tab 2: Practice MCQs
@@ -553,7 +552,7 @@ with tab2:
     col1, col2 = st.columns([3, 1])
 
     with col1:
-        st.markdown("Choose a high-level concept and difficulty, then generate a 10-question practice quiz.")
+        st.markdown("Choose a high-level concept and difficulty, then generate a practice quiz.")
         hl_concepts = load_hl_concepts()
         if not hl_concepts:
             st.warning("Unable to load curriculum list from backend. You can enter a concept manually.")
@@ -561,7 +560,8 @@ with tab2:
         else:
             hl = st.selectbox("High-Level Concept", hl_concepts)
 
-        diff = st.selectbox("Difficulty", ["easy", "medium", "hard"], index=["easy", "medium", "hard"].index(st.session_state.practice_difficulty))
+        diff = st.selectbox("Difficulty", ["easy", "medium", "hard"],
+                            index=["easy", "medium", "hard"].index(st.session_state.practice_difficulty))
         st.session_state.practice_difficulty = diff
 
         if st.button("Generate Practice Quiz"):
@@ -584,7 +584,7 @@ with tab2:
                     sel = st.radio(f"Select (Q{i+1})", options, index=0, key=f"practice_{qid}")
                     st.session_state.practice_answers[qid] = sel
                 else:
-                    st.text("Question options missing in this question data.")
+                    st.text("Question options missing.")
             if st.button("Submit Practice Quiz"):
                 submit_practice_quiz()
 
@@ -592,7 +592,8 @@ with tab2:
         st.markdown("Practice Controls")
         st.markdown("Current difficulty: " + st.session_state.practice_difficulty)
         if st.session_state.practice_quiz:
-            st.button("Discard Practice Quiz", on_click=lambda: st.session_state.update({"practice_quiz": None, "practice_answers": {}}))
+            st.button("Discard Practice Quiz",
+                      on_click=lambda: st.session_state.update({"practice_quiz": None, "practice_answers": {}}))
 
 # -------------------------
 # Tab 3: Mastery Dashboard
@@ -630,4 +631,4 @@ with tab3:
                     st.dataframe(subdf, use_container_width=True)
 
 st.markdown("---")
-st.caption("If you run into backend 422/500 errors, check backend logs and ensure the API contract matches the front-end payloads.")
+st.caption("If you run into backend 422/500 errors, check backend logs and ensure API contract matches the frontend payloads.")

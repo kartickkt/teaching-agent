@@ -219,7 +219,12 @@ def start_program_endpoint(request: LessonOrderRequest):
 def submit_diagnostic_endpoint(request: SubmitDiagnosticRequest):
     service = TeachingLoopService(request.student_name)
     try:
-        submissions_payload = request.submissions.model_dump() if hasattr(request.submissions, "model_dump") else request.submissions.dict()
+        submissions_payload = (
+            request.submissions.model_dump()
+            if hasattr(request.submissions, "model_dump")
+            else request.submissions.dict()
+        )
+
         result = service.submit_diagnostic(
             lesson_order=request.lesson_order,
             quiz_submissions=submissions_payload,
@@ -230,10 +235,19 @@ def submit_diagnostic_endpoint(request: SubmitDiagnosticRequest):
         if isinstance(result, dict) and "quiz" in result:
             result["quiz"] = _ensure_quiz_shape(result.get("quiz"))
 
-        return DiagnosticResponse(**result)
+        # 🔥 CRITICAL FIX:
+        # Guarantee updated lesson_order is always forwarded to frontend
+        safe_result = {
+            **result,
+            "lesson_order": result.get("lesson_order", request.lesson_order)
+        }
+
+        return DiagnosticResponse(**safe_result)
+
     except Exception as e:
         logger.error(f"submit_diagnostic error: {e}", exc_info=True)
         raise HTTPException(500, f"Error submitting diagnostic: {e}")
+
 
 
 @app.post("/program/teach_step_stream")
@@ -284,21 +298,29 @@ def generate_practice_quiz_endpoint(request: PracticeQuizRequest):
     except Exception as e:
         logger.error(f"practice/generate_quiz error: {e}", exc_info=True)
         raise HTTPException(500, f"Error generating practice quiz: {e}")
-
+    
 
 @app.post("/practice/submit_score")
 def submit_practice_quiz_score_endpoint(request: PracticeSubmitRequest):
     service = TeachingLoopService(request.student_name)
     try:
-        return service.submit_practice_quiz_score(
+        # Perform the mastery update (DB write)
+        service.submit_practice_quiz_score(
             request.hl_concept_name,
             request.score,
             request.difficulty
         )
+
+        # ✅ Return FAST so Streamlit does not timeout
+        return {
+            "status": "ok",
+            "score": request.score,
+            "concept": request.hl_concept_name
+        }
+
     except Exception as e:
         logger.error(f"practice/submit_score error: {e}", exc_info=True)
         raise HTTPException(500, f"Error submitting practice score: {e}")
-
 
 # ----------------------------------------------------
 # Local Dev Entry Point (Cloud Run uses entrypoint CMD)
