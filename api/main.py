@@ -11,6 +11,8 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 
 # ----------------------------------------------------
 # Logging (Cloud Run reads from stderr automatically)
@@ -148,9 +150,28 @@ def start_program_endpoint(request: LessonOrderRequest):
     service = TeachingLoopService(request.student_name)
     try:
         result = service.start_program(request.lesson_order)
-        return DiagnosticResponse(**result)
+        # DEBUG: log raw result so we can see malformed quiz shapes in logs
+        logger.info("DEBUG start_program raw result: %s", result)
+
+        # Try to coerce into pydantic model but if validation fails, return raw JSON with helpful message
+        try:
+            return DiagnosticResponse(**result)
+        except ValidationError as ve:
+            # Log the validation error and the raw payload
+            logger.error("ValidationError building DiagnosticResponse: %s", ve)
+            logger.error("Raw payload causing validation error: %s", result)
+            # Return raw JSON (status 200) so frontend can inspect; include warning
+            payload = {
+                "status": result.get("status", "error"),
+                "lesson_order": result.get("lesson_order", request.lesson_order or 1),
+                "lesson_name": result.get("lesson_name"),
+                "quiz": result.get("quiz"),
+                "completed_lessons": result.get("completed_lessons", []),
+                "warning": "Response shape did not match DiagnosticResponse - returned raw payload; check backend logs."
+            }
+            return JSONResponse(status_code=200, content=payload)
     except Exception as e:
-        logger.error(f"start_program error: {e}")
+        logger.error(f"start_program error: {e}", exc_info=True)
         raise HTTPException(500, f"Error starting program: {e}")
 
 

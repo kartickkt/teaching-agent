@@ -74,6 +74,10 @@ def get_program_status(lesson_order_override: Optional[int] = None):
         payload["lesson_order"] = int(lesson_order_override)
     with st.spinner("Fetching program status..."):
         r = api_post("/program/start", payload, timeout=30)
+
+        # 🔍 DEBUG: See EXACT backend response
+        st.write("DEBUG /program/start response:", r.text if r else "NO RESPONSE")
+        
         if not r:
             return
         try:
