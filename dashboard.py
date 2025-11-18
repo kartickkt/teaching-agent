@@ -1,4 +1,4 @@
-# dashboard.py
+# dashboard.py (Corrected Version)
 """
 Streamlit dashboard for Sequential Gated Teaching Agent
 - Guided Flow (diagnostic -> study -> final quiz)
@@ -27,7 +27,7 @@ init_state("current_lesson_order", 1)
 init_state("completed_lessons", [])
 init_state("current_lesson_state", None)
 init_state("current_quiz_data", None)  # holds diagnostic or final quiz (mcq + open_questions)
-init_state("mcq_answers_storage", {})   # mapping question_id/text -> selected option index or option text
+init_state("mcq_answers_storage", {})  # mapping question_id/text -> selected option index or option text
 init_state("open_answers_storage", {})  # mapping open index -> text
 init_state("is_streaming", False)
 init_state("stream_placeholder", None)
@@ -326,7 +326,9 @@ with tab1:
         # DIAGNOSTIC / GATE (also used as final quiz when loaded)
         # -------------------------
         quiz = st.session_state.current_quiz_data
-        if state.get("status") in ["diagnostic_required", "passed_diagnostic"] or quiz:
+        
+        # --- MODIFIED LOGIC: Only show quiz if it's explicitly loaded ---
+        if state.get("status") == "diagnostic_required" or quiz:
             # render diagnostic (or final, if loaded)
             st.subheader("Diagnostic / Gate")
             if not quiz:
@@ -393,7 +395,19 @@ with tab1:
                         try:
                             r.raise_for_status()
                             st.session_state.current_lesson_state = r.json()
+                            
+                            # --- FIX 1: Clear the quiz data after successful submission ---
+                            st.session_state.current_quiz_data = None 
+                            st.session_state.mcq_answers_storage = {}
+                            st.session_state.open_answers_storage = {}
+                            # --- End Fix 1 ---
+
                             st.success("Diagnostic graded. Check options / teaching flow below.")
+                            
+                            # --- FIX 1 (Recommended): Rerun to refresh the UI ---
+                            st.rerun() 
+                            # --- End Fix 1 ---
+                            
                         except Exception as e:
                             st.error(f"Error submitting diagnostic: {e}")
 
@@ -417,14 +431,40 @@ with tab1:
                     # after finishing streaming, increment index if explanation exists
                     if st.session_state.current_explanation:
                         st.session_state.current_sub_concept_index = min(len(sub_list), idx + 1)
+                        # --- ADDED: Rerun to update the "Teach Next" button ---
+                        st.rerun() 
             else:
                 st.success("All sub-concepts covered. Load or submit the final lesson quiz when ready.")
+                
+                # --- FIX 2: Replace the "Load Final Lesson Quiz" button logic ---
                 if st.button("Load Final Lesson Quiz"):
-                    # reuse start_program to get a quiz (same format)
-                    get_program_status(state.get("lesson_order"))
-                    st.toast("Final quiz loaded (diagnostic endpoint used as final).", icon="🧪")
+                    with st.spinner("Loading final quiz..."):
+                        payload = {
+                            "student_name": st.session_state.student_name, 
+                            "lesson_order": state.get("lesson_order")
+                        }
+                        # Call /start just to get the quiz JSON, not to change state
+                        r = api_post("/program/start", payload, timeout=30) 
+                        
+                        if r and r.status_code == 200:
+                            quiz_json = r.json()
+                            quiz_data = quiz_json.get("quiz")
+                            
+                            if quiz_data and isinstance(quiz_data, dict):
+                                # JUST save the quiz data, not the whole state
+                                st.session_state.current_quiz_data = quiz_data
+                                st.session_state.mcq_answers_storage = {}
+                                st.session_state.open_answers_storage = {}
+                                st.toast("Final quiz loaded. Fill it out above.", icon="🧪")
+                                st.rerun()
+                            else:
+                                st.error(f"Failed to get valid quiz data from backend. Response: {quiz_json}")
+                        else:
+                            st.error(f"API error loading final quiz. Status: {r.status_code if r else 'N/A'}")
+                # --- End Fix 2 ---
 
                 # If final quiz is loaded in current_quiz_data, render submit button
+                # This button is NOW VISIBLE because we didn't break the state
                 final_quiz = st.session_state.current_quiz_data
                 if final_quiz:
                     st.markdown("You have a final quiz loaded. Review it in the Diagnostic section above and press the button below to submit as final.")
@@ -507,6 +547,14 @@ with tab1:
                         r.raise_for_status()
                         st.session_state.current_lesson_state = r.json()
                         st.toast("Entering study mode", icon="📚")
+                        
+                        # --- FIX 1: Clear the quiz data when choosing to study ---
+                        st.session_state.current_quiz_data = None
+                        st.session_state.mcq_answers_storage = {}
+                        st.session_state.open_answers_storage = {}
+                        st.rerun()
+                        # --- End Fix 1 ---
+                        
                     except Exception as e:
                         st.error(f"Failed to start study mode: {e}")
 
