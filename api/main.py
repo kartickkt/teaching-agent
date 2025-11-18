@@ -1,6 +1,6 @@
-# api/main.py (FINAL PRODUCTION VERSION)
+# api/main.py (FIXED + PRODUCTION READY)
 """
-FastAPI application to serve the teaching agent logic with the new 
+FastAPI application to serve the teaching agent logic with the new
 Sequential Gated Flow (9 Ordered Lessons, Diagnostic Gates).
 """
 
@@ -10,8 +10,7 @@ import logging
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
-from fastapi.responses import StreamingResponse
-from fastapi.responses import JSONResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import ValidationError
 
 # ----------------------------------------------------
@@ -35,7 +34,7 @@ try:
     from src.student_assessment import AssessmentAgent, LLM_MODEL
     from src.student_teaching_loop import TeachingLoopService, WORKFLOWS_JSON
 except Exception as e:
-    logger.error(f"❌ Failed to import backend modules: {e}")
+    logger.error(f"❌ Failed to import backend modules: {e}", exc_info=True)
     raise
 
 # ----------------------------------------------------
@@ -61,12 +60,30 @@ app = FastAPI(
 try:
     db_profile = StudentProfile()
     assessment_agent = AssessmentAgent()
-
     logger.info("✅ FastAPI server startup complete. Agents and curriculum loaded.")
 except Exception as e:
-    logger.error(f"❌ Startup initialization failed: {e}")
+    logger.error(f"❌ Startup initialization failed: {e}", exc_info=True)
     db_profile = None
     assessment_agent = None
+
+
+# ---------------------------
+# Utility: defensive normalization for quiz payloads
+# ---------------------------
+def _ensure_quiz_shape(quiz_obj: Any) -> Dict[str, Any]:
+    """
+    Defensive normalization so the API always returns:
+      {"mcq": [...], "open_questions": [...]}
+    """
+    if not isinstance(quiz_obj, dict):
+        return {"mcq": [], "open_questions": []}
+    mcq = quiz_obj.get("mcq") or quiz_obj.get("mcqs") or quiz_obj.get("questions") or []
+    open_q = quiz_obj.get("open_questions") or quiz_obj.get("opens") or []
+    if not isinstance(mcq, list):
+        mcq = []
+    if not isinstance(open_q, list):
+        open_q = []
+    return {"mcq": mcq, "open_questions": open_q}
 
 
 # ----------------------------------------------------
@@ -99,6 +116,8 @@ class DiagnosticResponse(BaseModel):
     options: Optional[List[str]] = None
     message: Optional[str] = None
     completed_lessons: Optional[List[int]] = None
+    score: Optional[float] = None  # added to accept passed_diagnostic payloads
+    sub_concepts_list: Optional[List[str]] = None  # added for study flow
 
 
 class FinalQuizRequest(SubmitDiagnosticRequest):
@@ -128,7 +147,6 @@ class PracticeQuizRequest(StudentRequest):
     difficulty: str = "medium"
 
 
-# FIXED: proper full request model for practice submit
 class PracticeSubmitRequest(PracticeQuizRequest):
     score: float
 
@@ -136,12 +154,33 @@ class PracticeSubmitRequest(PracticeQuizRequest):
 # ----------------------------------------------------
 # API Endpoints
 # ----------------------------------------------------
+@app.get("/healthz")
+def healthz():
+    return {"status": "ok"}
+
+
+@app.get("/curriculum/high_level")
+def list_high_level_concepts():
+    """
+    Returns list of high-level concept names (exact strings from curriculum).
+    Frontend can use this to populate dropdowns.
+    """
+    try:
+        mapping = CurriculumManager.get_high_level_concepts()
+        keys = list(mapping.keys())
+        return {"high_level_concepts": keys}
+    except Exception as e:
+        logger.error("Failed to list curriculum high-level concepts: %s", e, exc_info=True)
+        raise HTTPException(500, f"Failed to list curriculum: {e}")
+
+
 @app.post("/register_student", response_model=StudentRequest)
 def register_student_endpoint(request: StudentRequest):
     try:
         db_profile.register_student(request.student_name)
         return {"student_name": request.student_name}
     except Exception as e:
+        logger.error("register_student error: %s", e, exc_info=True)
         raise HTTPException(500, f"Failed to register student: {e}")
 
 
@@ -150,17 +189,18 @@ def start_program_endpoint(request: LessonOrderRequest):
     service = TeachingLoopService(request.student_name)
     try:
         result = service.start_program(request.lesson_order)
-        # DEBUG: log raw result so we can see malformed quiz shapes in logs
         logger.info("DEBUG start_program raw result: %s", result)
+
+        # Defensive normalization: ensure quiz shape exists and is safe
+        if isinstance(result, dict) and "quiz" in result:
+            result["quiz"] = _ensure_quiz_shape(result.get("quiz"))
 
         # Try to coerce into pydantic model but if validation fails, return raw JSON with helpful message
         try:
             return DiagnosticResponse(**result)
         except ValidationError as ve:
-            # Log the validation error and the raw payload
             logger.error("ValidationError building DiagnosticResponse: %s", ve)
             logger.error("Raw payload causing validation error: %s", result)
-            # Return raw JSON (status 200) so frontend can inspect; include warning
             payload = {
                 "status": result.get("status", "error"),
                 "lesson_order": result.get("lesson_order", request.lesson_order or 1),
@@ -179,14 +219,20 @@ def start_program_endpoint(request: LessonOrderRequest):
 def submit_diagnostic_endpoint(request: SubmitDiagnosticRequest):
     service = TeachingLoopService(request.student_name)
     try:
+        submissions_payload = request.submissions.model_dump() if hasattr(request.submissions, "model_dump") else request.submissions.dict()
         result = service.submit_diagnostic(
             lesson_order=request.lesson_order,
-            quiz_submissions=request.submissions.model_dump(),
+            quiz_submissions=submissions_payload,
             skip_mode=request.skip_mode
         )
+
+        # Ensure quiz shape in response if present
+        if isinstance(result, dict) and "quiz" in result:
+            result["quiz"] = _ensure_quiz_shape(result.get("quiz"))
+
         return DiagnosticResponse(**result)
     except Exception as e:
-        logger.error(f"submit_diagnostic error: {e}")
+        logger.error(f"submit_diagnostic error: {e}", exc_info=True)
         raise HTTPException(500, f"Error submitting diagnostic: {e}")
 
 
@@ -196,7 +242,7 @@ def teach_step_stream_endpoint(request: TeachingStepRequest):
     try:
         return service.teach_step_stream(request.lesson_order, request.concept_name)
     except Exception as e:
-        logger.error(f"teach_step_stream error: {e}")
+        logger.error(f"teach_step_stream error: {e}", exc_info=True)
 
         def error_gen():
             yield f"{{'error': '{e}'}}"
@@ -208,13 +254,14 @@ def teach_step_stream_endpoint(request: TeachingStepRequest):
 def finish_lesson_quiz_endpoint(request: FinalQuizRequest):
     service = TeachingLoopService(request.student_name)
     try:
+        submissions_payload = request.submissions.model_dump() if hasattr(request.submissions, "model_dump") else request.submissions.dict()
         result = service.finish_lesson_quiz(
             lesson_order=request.lesson_order,
-            quiz_submissions=request.submissions.model_dump()
+            quiz_submissions=submissions_payload
         )
         return FinalQuizResponse(**result)
     except Exception as e:
-        logger.error(f"finish_quiz error: {e}")
+        logger.error(f"finish_quiz error: {e}", exc_info=True)
         raise HTTPException(500, f"Error finishing lesson quiz: {e}")
 
 
@@ -225,7 +272,7 @@ def get_mastery_dashboard(request: StudentRequest):
         data = service.get_mastery_dashboard_data()
         return MasteryDashboardResponse(**data)
     except Exception as e:
-        logger.error(f"dashboard error: {e}")
+        logger.error(f"dashboard error: {e}", exc_info=True)
         raise HTTPException(500, f"Error retrieving dashboard: {e}")
 
 
@@ -235,11 +282,10 @@ def generate_practice_quiz_endpoint(request: PracticeQuizRequest):
     try:
         return service.generate_practice_quiz(request.hl_concept_name, request.difficulty)
     except Exception as e:
-        logger.error(f"practice/generate_quiz error: {e}")
+        logger.error(f"practice/generate_quiz error: {e}", exc_info=True)
         raise HTTPException(500, f"Error generating practice quiz: {e}")
 
 
-# FIXED: clean practice submit endpoint
 @app.post("/practice/submit_score")
 def submit_practice_quiz_score_endpoint(request: PracticeSubmitRequest):
     service = TeachingLoopService(request.student_name)
@@ -250,7 +296,7 @@ def submit_practice_quiz_score_endpoint(request: PracticeSubmitRequest):
             request.difficulty
         )
     except Exception as e:
-        logger.error(f"practice/submit_score error: {e}")
+        logger.error(f"practice/submit_score error: {e}", exc_info=True)
         raise HTTPException(500, f"Error submitting practice score: {e}")
 
 
@@ -259,6 +305,5 @@ def submit_practice_quiz_score_endpoint(request: PracticeSubmitRequest):
 # ----------------------------------------------------
 if __name__ == "__main__":
     import uvicorn
-
     port = int(os.getenv("PORT", 8000))
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)

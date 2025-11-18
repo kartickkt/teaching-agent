@@ -7,88 +7,39 @@ import os
 
 from fastapi.responses import StreamingResponse
 
-# Correct imports
 from .student_profiles import StudentProfile, CurriculumManager
-from .student_assessment import AssessmentAgent
+from .student_assessment import AssessmentAgent, _ensure_quiz_shape  # reuse helper
 from .mastery_service import MasteryService
 
+# -----------------------------
+# Constants
+# -----------------------------
 PASS_THRESHOLD = 0.75
 PROJECT_ROOT = Path(__file__).parent.parent
 WORKFLOWS_JSON = PROJECT_ROOT / "data" / "curriculum.json"
 
 
 # -----------------------------
-# Helpers
-# -----------------------------
-def normalize_quiz(q):
-    """Normalizes quiz returned by LLM so it ALWAYS contains valid mcq and open_questions."""
-    if not isinstance(q, dict):
-        return {"mcq": [], "open_questions": []}
-
-    mcq = q.get("mcq") or q.get("mcqs") or q.get("questions") or []
-    open_q = q.get("open_questions") or q.get("opens") or q.get("openQ") or []
-
-    if not isinstance(mcq, list):
-        mcq = []
-    if not isinstance(open_q, list):
-        open_q = []
-
-    # normalize MCQs
-    normalized_mcq = []
-    for i, m in enumerate(mcq):
-        if not isinstance(m, dict):
-            normalized_mcq.append({
-                "id": f"m{i+1}",
-                "question": str(m),
-                "options": ["A","B","C","D"],
-                "answer_index": 0,
-                "answer": "A"
-            })
-            continue
-
-        opts = m.get("options") or m.get("choices") or []
-        if not isinstance(opts, list):
-            opts = ["A","B","C","D"]
-
-        ans_idx = m.get("answer_index")
-        ans_text = m.get("answer")
-
-        if isinstance(ans_idx, int) and 0 <= ans_idx < len(opts):
-            ans_text = opts[ans_idx]
-        elif isinstance(ans_text, int) and ans_text < len(opts):
-            ans_idx = ans_text
-            ans_text = opts[ans_idx]
-        elif isinstance(ans_text, str) and ans_text in opts:
-            ans_idx = opts.index(ans_text)
-        else:
-            ans_idx = 0
-            ans_text = opts[0]
-
-        normalized_mcq.append({
-            "id": m.get("id", f"m{i+1}"),
-            "question": m.get("question", m.get("text", "")),
-            "options": opts,
-            "answer_index": ans_idx,
-            "answer": ans_text
-        })
-
-    return {"mcq": normalized_mcq, "open_questions": open_q}
-
-
-# -----------------------------
-# TeachingLoopService
+# Teaching Loop Service
 # -----------------------------
 class TeachingLoopService:
     def __init__(self, student_name: str):
         self.student_name = student_name
 
+        # DB + master modules
         self.profile = StudentProfile()
         self.mastery_service = MasteryService(self.profile)
+
+        # LLM agent
         self.agent = AssessmentAgent()
 
+        # Curriculum
         self.high_level_concepts_map = CurriculumManager.get_high_level_concepts()
+
+        # Ensure student exists in DB
         self.profile.register_student(student_name)
 
+        # Sequential lesson map
         self.lessons_by_order = sorted(
             self.high_level_concepts_map.values(),
             key=lambda x: x.get("order", 99)
@@ -100,7 +51,7 @@ class TeachingLoopService:
         )
 
     # -----------------------------
-    # Program Start
+    # Program Start (Diagnostic)
     # -----------------------------
     def start_program(self, lesson_order_override: Optional[int] = None) -> Dict[str, Any]:
 
@@ -116,14 +67,21 @@ class TeachingLoopService:
 
         hl_name = lesson["high_level_concept"]
 
+        # Generate diagnostic quiz
         quiz = self.agent.generate_diagnostic_quiz(
             concept_name=hl_name,
             num_mcq=5,
             num_open=3
         )
 
-        quiz = normalize_quiz(quiz)
+        # Defensive normalization: ensure canonical shape before returning to API layer
+        try:
+            quiz = _ensure_quiz_shape(quiz, hl_name, 5, 3)
+        except Exception:
+            # final fallback
+            quiz = {"mcq": [], "open_questions": []}
 
+        # Return structured program start state
         return {
             "status": "diagnostic_required",
             "lesson_order": current_order,
@@ -143,15 +101,18 @@ class TeachingLoopService:
 
         hl_name = lesson["high_level_concept"]
 
+        # Skip mode (user explicitly wants to skip lesson)
         if skip_mode:
             next_order = lesson_order + 1
             self.profile.update_progress(self.student_name, next_order, lesson_order)
+
             return {
                 "status": "lesson_skipped",
                 "next_lesson_order": next_order,
                 "message": f"Skipped {hl_name}"
             }
 
+        # Grade diagnostic quiz
         grading_result = self.mastery_service.grade_composite_quiz(
             concept_name=hl_name,
             quiz_submissions=quiz_submissions,
@@ -160,6 +121,7 @@ class TeachingLoopService:
 
         composite_score = grading_result["composite_score"]
 
+        # Update mastery
         self.mastery_service.update_lesson_mastery(
             self.student_name,
             lesson,
@@ -167,6 +129,7 @@ class TeachingLoopService:
             quiz_type="diagnostic"
         )
 
+        # Pass case
         if composite_score >= PASS_THRESHOLD:
             return {
                 "status": "passed_diagnostic",
@@ -179,10 +142,11 @@ class TeachingLoopService:
                 "grading_details": grading_result
             }
 
+        # Otherwise → start structured teaching
         return self._start_structured_teaching(lesson_order, hl_name)
 
     # -----------------------------
-    # Start teaching
+    # Start structured teaching
     # -----------------------------
     def _start_structured_teaching(self, lesson_order: int, hl_name: str):
 
@@ -190,7 +154,10 @@ class TeachingLoopService:
         subs = sorted(lesson.get("sub_concepts", []), key=lambda x: x.get("order", 0))
 
         if not subs:
-            return {"status": "error", "message": "No sub-concepts found for lesson."}
+            return {
+                "status": "error",
+                "message": "No sub-concepts found for lesson."
+            }
 
         first_sub = subs[0]["concept"]
 
@@ -203,7 +170,7 @@ class TeachingLoopService:
         }
 
     # -----------------------------
-    # Streaming explainer
+    # Streaming teaching
     # -----------------------------
     def teach_step_stream(self, lesson_order: int, concept_name: str):
 
@@ -215,19 +182,23 @@ class TeachingLoopService:
 
         hl = lesson["high_level_concept"]
 
-        fixed_sub = next((s for s in lesson.get("sub_concepts", []) if s["concept"] == concept_name), None)
-        if fixed_sub and (fixed_sub.get("workflows") or fixed_sub.get("secondary_workflows")):
-            wf = (fixed_sub.get("workflows") or fixed_sub.get("secondary_workflows"))[0]
-            steps = [step.get("concept", concept_name) for step in wf.get("steps", [])]
-            return StreamingResponse(self.agent.generate_streaming_content(hl, concept_name, steps), media_type="text/plain")
+        # Find sub-concept
+        sub = next((s for s in lesson.get("sub_concepts", [])
+                    if s["concept"] == concept_name), None)
 
-        return StreamingResponse(
-            self.agent.generate_streaming_content(hl, concept_name),
-            media_type="text/plain"
-        )
+        # Use workflow if available
+        if sub and (sub.get("workflows") or sub.get("secondary_workflows")):
+            wf = (sub.get("workflows") or sub.get("secondary_workflows"))[0]
+            first_step = wf.get("steps", [{}])[0].get("concept", concept_name)
+            generator = self.agent.generate_streaming_content(hl, first_step)
+            return StreamingResponse(generator, media_type="text/plain")
+
+        # Default: explain the concept directly
+        generator = self.agent.generate_streaming_content(hl, concept_name)
+        return StreamingResponse(generator, media_type="text/plain")
 
     # -----------------------------
-    # Final quiz
+    # Final lesson quiz
     # -----------------------------
     def finish_lesson_quiz(self, lesson_order: int, quiz_submissions: Dict[str, Any]):
 
@@ -245,6 +216,7 @@ class TeachingLoopService:
 
         composite_score = grading_result["composite_score"]
 
+        # Update mastery
         self.mastery_service.update_lesson_mastery(
             self.student_name,
             lesson,
@@ -252,6 +224,7 @@ class TeachingLoopService:
             quiz_type="final"
         )
 
+        # Pass
         if composite_score >= PASS_THRESHOLD:
             next_order = lesson_order + 1
             self.profile.update_progress(self.student_name, next_order, lesson_order)
@@ -263,6 +236,7 @@ class TeachingLoopService:
                 "grading_details": grading_result
             }
 
+        # Fail
         self.profile.update_progress(self.student_name, lesson_order, None)
 
         return {
@@ -273,7 +247,7 @@ class TeachingLoopService:
         }
 
     # -----------------------------
-    # Mastery dashboard
+    # Mastery Dashboard
     # -----------------------------
     def get_mastery_dashboard_data(self):
 
@@ -306,10 +280,13 @@ class TeachingLoopService:
                 "sub_concepts": subs
             })
 
-        return {"student_name": self.student_name, "dashboard_data": dashboard}
+        return {
+            "student_name": self.student_name,
+            "dashboard_data": dashboard
+        }
 
     # -----------------------------
-    # Practice
+    # Practice Mode
     # -----------------------------
     def generate_practice_quiz(self, hl_concept_name: str, difficulty: str):
 
@@ -319,16 +296,19 @@ class TeachingLoopService:
             num_open=0
         )
 
-        quiz = normalize_quiz(quiz)
-
+        quiz = _ensure_quiz_shape(quiz, hl_concept_name, 10, 0)
         return {
             "concept_name": hl_concept_name,
-            "questions": quiz["mcq"]
+            "questions": quiz.get("mcq", [])
         }
 
     def submit_practice_quiz_score(self, hl_concept_name: str, score: float, difficulty: str):
 
-        lesson = next((c for c in self.lessons_by_order if c["high_level_concept"] == hl_concept_name), None)
+        lesson = next(
+            (c for c in self.lessons_by_order if c["high_level_concept"] == hl_concept_name),
+            None
+        )
+
         if not lesson:
             return {"message": "Concept not found."}
 
