@@ -1,63 +1,61 @@
-# src/mastery_service.py (FINAL CORRECT VERSION)
-from typing import Dict, Any, Optional, List
-from .student_profiles import StudentProfile, CurriculumManager
-from .student_assessment import grade_answer
+# src/mastery_service.py
+import asyncio
+from typing import Dict, Any, List
+from .student_profiles import StudentProfile
+from .student_assessment import grade_answer_async 
 
-# --- Constants ---
-DIFFICULTY_ALPHAS = {
-    "diagnostic": 0.3,
-    "final": 0.4,
-    "practice": 0.1
-}
+DIFFICULTY_ALPHAS = {"diagnostic": 0.3, "final": 0.4, "practice": 0.1}
 
 class MasteryService:
-    """
-    Handles:
-    - MCQ + open-answer grading
-    - Composite score calculation
-    - EMA mastery updates inside student_profiles.mastery JSON
-    """
-
     def __init__(self, profile: StudentProfile):
         self.profile = profile
 
     # --------------------------------------------------------
-    # COMPOSITE SCORING
+    # ASYNC COMPOSITE SCORING (PARALLEL)
     # --------------------------------------------------------
-    def grade_composite_quiz(self, concept_name: str, quiz_submissions: Dict[str, Any], quiz_type: str):
-        
+    async def grade_composite_quiz_async(self, concept_name: str, quiz_submissions: Dict[str, Any], quiz_type: str):
         mcq_answers = quiz_submissions.get("mcq_answers", [])
         open_questions = quiz_submissions.get("open_questions", [])
 
-        # --- MCQ grading (client sends correct answer temporarily)
+        # 1. MCQ Grading (Instant)
         mcq_correct = 0
         for ans in mcq_answers:
-            if ans.get("user_selection") == ans.get("answer"):
+            # Flexible checking for dict or object
+            sel = ans.get("user_selection")
+            corr = ans.get("answer")
+            if sel == corr:
                 mcq_correct += 1
+        
+        mcq_score_raw = mcq_correct
 
-        mcq_score_raw = mcq_correct  # out of 5
-
-        # --- Open answers (LLM-based scoring)
-        open_score_sum = 0.0
-        graded_open = []
-
+        # 2. Open Answers (Parallel Async LLM calls)
+        tasks = []
         for submission in open_questions:
-            question = submission.get("question")
-            user_answer = submission.get("user_answer")
+            q = submission.get("question", "")
+            u_ans = submission.get("user_answer", "")
+            # Schedule the coroutine
+            tasks.append(grade_answer_async(concept_name, q, u_ans))
+        
+        # Execute all LLM calls concurrently
+        results = await asyncio.gather(*tasks)
 
-            # LLM call
-            result = grade_answer(concept_name, question, user_answer)
-            open_score_sum += result.get("score", 0.0)
-
+        open_score_sum = sum(r.get("score", 0.0) for r in results)
+        
+        # Reconstruct feedback list
+        graded_open = []
+        for i, submission in enumerate(open_questions):
             graded_open.append({
-                "question": question,
-                "user_answer": user_answer,
-                "score": result.get("score", 0.0),
-                "feedback": result.get("feedback", "")
+                "question": submission.get("question"),
+                "user_answer": submission.get("user_answer"),
+                "score": results[i].get("score", 0.0),
+                "feedback": results[i].get("feedback", "")
             })
 
-        total_raw = mcq_score_raw + open_score_sum      # max = 8
-        composite = total_raw / 8.0
+        # Final Calc
+        # Denominator: 5 MCQs + 3 Open = 8 usually. Or dynamic.
+        total_items = max(1, len(mcq_answers) + len(open_questions))
+        total_raw = mcq_score_raw + open_score_sum
+        composite = total_raw / float(total_items)
 
         return {
             "mcq_correct": mcq_correct,
@@ -68,48 +66,21 @@ class MasteryService:
         }
 
     # --------------------------------------------------------
-    # MASTERY UPDATES
+    # MASTERY UPDATES (Sync is fine here)
     # --------------------------------------------------------
     def update_lesson_mastery(self, student_name: str, lesson_data: Dict[str, Any], final_score: float, quiz_type="final"):
-
         hl_name = lesson_data["high_level_concept"]
         sub_concepts = lesson_data.get("sub_concepts", [])
-
         alpha_sub = DIFFICULTY_ALPHAS.get(quiz_type, 0.4)
-        alpha_hl  = 0.1
-
-        # --------------------------------------------
-        # Update sub-concepts with EMA
-        # --------------------------------------------
+        
+        # Update subs
         for sub in sub_concepts:
-            name = sub["concept"]
-            self.profile.update_mastery(
-                student_name,
-                name,
-                final_score,
-                alpha=alpha_sub
-            )
+            self.profile.update_mastery(student_name, sub["concept"], final_score, alpha=alpha_sub)
 
-        # --------------------------------------------
-        # Update high-level mastery = avg(sub concept mastery)
-        # --------------------------------------------
+        # Update HL
         if sub_concepts:
             mastery_map = self.profile.get_all_mastery(student_name)
-
-            sub_scores = [
-                mastery_map.get(sub["concept"], 0.0)
-                for sub in sub_concepts
-            ]
-
+            sub_scores = [mastery_map.get(s["concept"], 0.0) for s in sub_concepts]
             if sub_scores:
-                avg_sub_mastery = sum(sub_scores) / len(sub_scores)
-                self.profile.update_mastery(
-                    student_name,
-                    hl_name,
-                    avg_sub_mastery,
-                    alpha=alpha_hl
-                )
-
-        # Return latest HL mastery
-        mastery_map = self.profile.get_all_mastery(student_name)
-        return mastery_map.get(hl_name, 0.0)
+                avg = sum(sub_scores) / len(sub_scores)
+                self.profile.update_mastery(student_name, hl_name, avg, alpha=0.1)
