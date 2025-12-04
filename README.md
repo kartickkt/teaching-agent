@@ -77,6 +77,9 @@ This project is optimized for **Throughput** and **Latency** using the following
 
 # Project Structure
 
+# 📂 Project Structure
+
+```bash
 ├── api/
 │   └── main.py              # FastAPI entrypoint (Async Endpoints + Lazy Loading)
 ├── src/
@@ -90,8 +93,6 @@ This project is optimized for **Throughput** and **Latency** using the following
 ├── Dockerfile                # Cloud Run Configuration
 ├── requirements.txt
 └── README.md
-
----
 
 # Local Development
 
