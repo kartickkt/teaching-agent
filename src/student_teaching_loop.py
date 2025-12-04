@@ -1,6 +1,7 @@
 # src/student_teaching_loop.py
 
 import json
+import asyncio  # <--- [FIX] Added import
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 from fastapi.responses import StreamingResponse
@@ -137,8 +138,14 @@ class TeachingLoopService:
         )
         composite = grading_result["composite_score"]
         
-        # Sync DB Update
-        self.mastery_service.update_lesson_mastery(self.student_name, lesson, composite, "diagnostic")
+        # [FIX] Run Sync DB Update in a separate thread to avoid blocking the event loop
+        await asyncio.to_thread(
+            self.mastery_service.update_lesson_mastery,
+            self.student_name,
+            lesson,
+            composite,
+            "diagnostic"
+        )
 
         if composite >= PASS_THRESHOLD:
             return {
@@ -170,8 +177,14 @@ class TeachingLoopService:
         )
         composite = grading_result["composite_score"]
 
-        # Sync DB Update
-        self.mastery_service.update_lesson_mastery(self.student_name, lesson, composite, "final")
+        # [FIX] Run Sync DB Update in a separate thread
+        await asyncio.to_thread(
+            self.mastery_service.update_lesson_mastery,
+            self.student_name,
+            lesson,
+            composite,
+            "final"
+        )
 
         if composite >= PASS_THRESHOLD:
             next_order = lesson_order + 1
