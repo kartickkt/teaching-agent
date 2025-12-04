@@ -18,7 +18,7 @@ class TeachingLoopService:
         self.mastery_service = MasteryService(self.profile)
         self.agent = AssessmentAgent()
         
-        # Ensure student
+        # Ensure student exists
         self.profile.register_student(student_name)
         
         # Curriculum
@@ -30,9 +30,13 @@ class TeachingLoopService:
         self.max_order = self.lessons_by_order[-1]["order"] if self.lessons_by_order else 1
 
     # -----------------------------
-    # Sync Methods (No changes needed)
+    # Sync Methods
     # -----------------------------
-    def start_program(self, lesson_order_override: Optional[int] = None) -> Dict[str, Any]:
+    def start_program(self, lesson_order_override: Optional[int] = None, lazy: bool = False) -> Dict[str, Any]:
+        """
+        Determines the student's current state.
+        If lazy=True, skips the expensive quiz generation step.
+        """
         progress = self.profile.get_progress(self.student_name)
         current_order = lesson_order_override or progress.get("current_lesson_order", 1)
 
@@ -42,7 +46,18 @@ class TeachingLoopService:
         lesson = CurriculumManager.get_high_level_by_order(current_order)
         hl_name = lesson["high_level_concept"]
 
-        # Generate Quiz (Sync)
+        # --- LAZY LOADING LOGIC ---
+        if lazy:
+             return {
+                "status": "diagnostic_required",
+                "lesson_order": current_order,
+                "lesson_name": hl_name,
+                "quiz": None, # Frontend handles this by calling ensure_diagnostic_quiz
+                "completed_lessons": progress.get("completed_lessons", [])
+            }
+        # --------------------------
+
+        # Fallback: Synchronous generation (if lazy=False)
         quiz = self.agent.generate_diagnostic_quiz(hl_name, 5, 3)
         
         return {
@@ -52,6 +67,20 @@ class TeachingLoopService:
             "quiz": quiz,
             "completed_lessons": progress.get("completed_lessons", [])
         }
+
+    def ensure_diagnostic_quiz(self, lesson_order: int):
+        """
+        On-demand generation for the 'Lazy Load' pattern.
+        Called when the frontend sees 'quiz': None.
+        """
+        lesson = CurriculumManager.get_high_level_by_order(lesson_order)
+        if not lesson:
+            return {"quiz": None}
+            
+        hl_name = lesson["high_level_concept"]
+        # This is the slow LLM call (5-10s)
+        quiz = self.agent.generate_diagnostic_quiz(hl_name, 5, 3)
+        return {"quiz": quiz}
 
     def teach_step_stream(self, lesson_order: int, concept_name: str):
         lesson = CurriculumManager.get_high_level_by_order(lesson_order)

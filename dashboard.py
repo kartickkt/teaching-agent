@@ -75,8 +75,6 @@ def get_program_status(lesson_order_override: Optional[int] = None):
     with st.spinner("Fetching program status..."):
         r = api_post("/program/start", payload, timeout=30)
 
-        st.write("DEBUG /program/start response:", r.text if r else "NO RESPONSE")
-
         if not r:
             return
         try:
@@ -247,7 +245,7 @@ def submit_practice_quiz():
         "score": score
     }
     with st.spinner("Submitting practice score..."):
-        r = api_post("/practice/submit_score", payload, timeout=5)
+        r = api_post("/practice/submit_score", payload, timeout=30)
         if r:
             try:
                 r.raise_for_status()
