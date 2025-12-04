@@ -7,13 +7,13 @@ This project demonstrates **high-concurrency backend engineering**, **LLM infere
 
 ---
 
-## 🔗 Live Demo
+## Live Demo
 Try the interactive teaching agent:
 **[Launch Adaptive Agent](https://teaching-agent-6savqkhboahfztm83w9wtj.streamlit.app)**
 
 ---
 
-# 🚀 Core Engineering Highlights
+# Core Engineering Highlights
 
 | Feature | Engineering Implementation | Impact |
 |--------|----------------------------|--------|
@@ -25,7 +25,7 @@ Try the interactive teaching agent:
 
 ---
 
-# 🏗 System Architecture
+# System Architecture
 
            ┌─────────────────────────┐
            │      Streamlit UI       │
@@ -46,7 +46,7 @@ Try the interactive teaching agent:
 
 ---
 
-# ⚡ Performance Engineering
+# Performance Engineering
 
 This project is optimized for **Throughput** and **Latency** using the following techniques:
 
@@ -63,7 +63,7 @@ This project is optimized for **Throughput** and **Latency** using the following
 
 ---
 
-# 🧩 Technology Stack
+# Technology Stack
 
 | Layer | Technology | Key Patterns Used |
 |-------|------------|-------------------|
@@ -75,7 +75,7 @@ This project is optimized for **Throughput** and **Latency** using the following
 
 ---
 
-# 📂 Project Structure
+# Project Structure
 
 ├── api/
 │   └── main.py              # FastAPI entrypoint (Async Endpoints + Lazy Loading)
@@ -93,8 +93,30 @@ This project is optimized for **Throughput** and **Latency** using the following
 
 ---
 
-# 🛠️ Local Development
+# Local Development
 
 ### 1) Install dependencies
 ```bash
 pip install -r requirements.txt
+
+### 2) Start Backend (FastAPI)
+
+uvicorn api.main:app --port 8000 --reload
+
+### 3) Start Frontend (Streamlit)
+
+streamlit run dashboard.py
+
+# Deployment
+
+Backend (Google Cloud Run)
+Fully containerized using Docker.
+
+Stateless scaling with gunicorn + uvicorn workers.
+
+Secrets (OPENAI_API_KEY, DB_URL) managed via Cloud Run Environment Variables.
+
+Database (Supabase)
+Hybrid Schema: Uses student_profiles table with jsonb columns for scalable mastery tracking.
+
+Pooling: Application manages a persistent ThreadedConnectionPool.
