@@ -1,10 +1,10 @@
-# api/main.py
+# api/main.py (FINAL VERSION WITH LAZY LOADING)
 
 import os
 import sys
 import logging
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 from fastapi.responses import StreamingResponse
 
@@ -13,28 +13,30 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 src_dir = os.path.abspath(os.path.join(current_dir, '..', 'src'))
 if src_dir not in sys.path: sys.path.append(src_dir)
 
-from src.student_profiles import StudentProfile, init_db_pool # <--- Import init_db_pool
+from src.student_profiles import StudentProfile, init_db_pool 
 from src.student_teaching_loop import TeachingLoopService
-from src.student_profiles import CurriculumManager # for helper endpoint
+from src.student_profiles import CurriculumManager 
 
 logger = logging.getLogger("uvicorn")
 app = FastAPI(title="Async Teaching Agent API")
 
 # ----------------------------------------
-# Startup Event: Initialize DB Pool
+# Startup Event
 # ----------------------------------------
 @app.on_event("startup")
 def startup_event():
-    init_db_pool() # <--- Crucial for performance
+    init_db_pool() 
 
 # ----------------------------------------
-# Models (Simplified for copy-paste)
+# Models
 # ----------------------------------------
 class StudentRequest(BaseModel):
     student_name: str
 
 class LessonOrderRequest(StudentRequest):
     lesson_order: Optional[int] = None
+    # [NEW] Added for Lazy Loading support
+    lazy: bool = False 
 
 class SubmitDiagnosticRequest(StudentRequest):
     lesson_order: int
@@ -71,24 +73,31 @@ def register_student(req: StudentRequest):
 def list_hl():
     return {"high_level_concepts": list(CurriculumManager.get_high_level_concepts().keys())}
 
-# Sync Endpoint (Program Start)
+# [UPDATED] Sync Endpoint (Program Start with Lazy Support)
 @app.post("/program/start")
 def start_program(req: LessonOrderRequest):
     service = TeachingLoopService(req.student_name)
-    return service.start_program(req.lesson_order)
+    # Pass the lazy flag to the service
+    return service.start_program(req.lesson_order, lazy=req.lazy)
+
+# [NEW] Dedicated Generation Endpoint (The "Slow" part)
+@app.post("/program/generate_diagnostic")
+def generate_diagnostic(req: LessonOrderRequest):
+    service = TeachingLoopService(req.student_name)
+    # Default to lesson 1 if not provided, though dashboard usually provides it
+    order = req.lesson_order or 1
+    return service.ensure_diagnostic_quiz(order)
 
 # ASYNC Endpoint (Grading)
 @app.post("/program/submit_diagnostic")
 async def submit_diagnostic(req: SubmitDiagnosticRequest):
     service = TeachingLoopService(req.student_name)
-    # AWAIT the async method
     return await service.submit_diagnostic_async(req.lesson_order, req.submissions, req.skip_mode)
 
 # ASYNC Endpoint (Final Grading)
 @app.post("/program/finish_quiz")
 async def finish_quiz(req: FinalQuizRequest):
     service = TeachingLoopService(req.student_name)
-    # AWAIT the async method
     return await service.finish_lesson_quiz_async(req.lesson_order, req.submissions)
 
 @app.post("/program/teach_step_stream")
