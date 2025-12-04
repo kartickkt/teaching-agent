@@ -1,9 +1,9 @@
-# dashboard.py (Corrected Version)
+# dashboard.py (FINAL FAST VERSION)
 """
 Streamlit dashboard for Sequential Gated Teaching Agent
-- Guided Flow (diagnostic -> study -> final quiz)
-- Practice MCQs (pick HL concept + difficulty -> 10 MCQs)
-- Mastery Dashboard (per-lesson & sub-concept)
+- Guided Flow (Lazy Loading implemented)
+- Practice MCQs
+- Mastery Dashboard
 """
 import streamlit as st
 import requests
@@ -72,8 +72,13 @@ def get_program_status(lesson_order_override: Optional[int] = None):
     payload = {"student_name": st.session_state.student_name}
     if lesson_order_override:
         payload["lesson_order"] = int(lesson_order_override)
+    
+    # --- LAZY LOADING ENABLED ---
+    payload["lazy"] = True 
+    # ----------------------------
+
     with st.spinner("Fetching program status..."):
-        r = api_post("/program/start", payload, timeout=30)
+        r = api_post("/program/start", payload, timeout=10) # Fast timeout for lazy load
 
         if not r:
             return
@@ -101,9 +106,10 @@ def get_program_status(lesson_order_override: Optional[int] = None):
                 st.session_state.mcq_answers_storage = {}
                 st.session_state.open_answers_storage = {}
             else:
+                # IMPORTANT: If lazy loaded, quiz might be None. That is expected.
                 st.session_state.current_quiz_data = None
 
-            st.success("Program status loaded.")
+            # st.success("Program status loaded.") # Optional: remove to reduce clutter
         except Exception as e:
             st.error(f"Failed to parse program status response: {e}")
 
@@ -245,6 +251,7 @@ def submit_practice_quiz():
         "score": score
     }
     with st.spinner("Submitting practice score..."):
+        # UPDATED TIMEOUT TO 30s
         r = api_post("/practice/submit_score", payload, timeout=30)
         if r:
             try:
@@ -334,72 +341,98 @@ with tab1:
 
         # DIAGNOSTIC
         quiz = st.session_state.current_quiz_data
-        if state.get("status") == "diagnostic_required" or quiz:
-            st.subheader("Diagnostic / Gate")
-            if not quiz:
-                st.info("Diagnostic quiz not found. Click Load / Refresh.")
-            else:
-                st.markdown("#### Multiple Choice (Part 1)")
-                for i, q in enumerate(quiz.get("mcq", [])):
-                    qid = q.get("id") or q.get("question")[:40] or f"m{i+1}"
-                    question_text = q.get("question") or q.get("text") or ""
-                    options = q.get("options") or q.get("choices") or []
-                    default_index = None
-                    if isinstance(st.session_state.mcq_answers_storage.get(qid), str) and options:
-                        try:
-                            default_index = options.index(st.session_state.mcq_answers_storage.get(qid))
-                        except ValueError:
-                            default_index = None
-                    index_to_use = default_index if default_index is not None else 0
-                    sel = st.radio(question_text, options, index=index_to_use, key=f"diag_mcq_{qid}")
-                    st.session_state.mcq_answers_storage[qid] = sel
+        
+        # --- NEW LAZY LOADING LOGIC ---
+        # If we need a diagnostic, but 'quiz' is None, it means we did a Lazy Load.
+        if state.get("status") == "diagnostic_required" and not quiz:
+            st.info(f"Lesson: {state.get('lesson_name')}")
+            st.markdown("### 🧠 Generating your personalized diagnostic...")
+            
+            with st.spinner("Consulting AI Tutor... (this takes ~10s)"):
+                payload = {
+                    "student_name": st.session_state.student_name,
+                    "lesson_order": state.get("lesson_order")
+                }
+                # Call the dedicated generation endpoint
+                r = api_post("/program/generate_diagnostic", payload, timeout=60)
+                
+                if r and r.status_code == 200:
+                    new_quiz_data = r.json().get("quiz")
+                    # Update State and normalize
+                    def normalize_quiz_inline(q):
+                        if not isinstance(q, dict): return {"mcq": [], "open_questions": []}
+                        mcq = q.get("mcq") or []
+                        open_q = q.get("open_questions") or []
+                        return {"mcq": mcq, "open_questions": open_q}
 
-                st.markdown("#### Short Open Answers (Part 2)")
+                    st.session_state.current_quiz_data = normalize_quiz_inline(new_quiz_data)
+                    st.rerun() # Rerun to render the quiz immediately
+        # ------------------------------
+
+        # RENDER QUIZ (If exists)
+        elif quiz:
+            st.subheader("Diagnostic / Gate")
+            st.markdown("#### Multiple Choice (Part 1)")
+            for i, q in enumerate(quiz.get("mcq", [])):
+                qid = q.get("id") or q.get("question")[:40] or f"m{i+1}"
+                question_text = q.get("question") or q.get("text") or ""
+                options = q.get("options") or q.get("choices") or []
+                default_index = None
+                if isinstance(st.session_state.mcq_answers_storage.get(qid), str) and options:
+                    try:
+                        default_index = options.index(st.session_state.mcq_answers_storage.get(qid))
+                    except ValueError:
+                        default_index = None
+                index_to_use = default_index if default_index is not None else 0
+                sel = st.radio(question_text, options, index=index_to_use, key=f"diag_mcq_{qid}")
+                st.session_state.mcq_answers_storage[qid] = sel
+
+            st.markdown("#### Short Open Answers (Part 2)")
+            for i, q in enumerate(quiz.get("open_questions", [])):
+                qtext = q.get("question") if isinstance(q, dict) else str(q)
+                key = f"diag_open_{i}"
+                default_text = st.session_state.open_answers_storage.get(key, "")
+                txt = st.text_area(qtext, value=default_text, key=key, height=120)
+                st.session_state.open_answers_storage[key] = txt
+
+            if st.button("Submit Diagnostic & Grade"):
+                mcq_answers = []
+                for q in quiz.get("mcq", []):
+                    qid = q.get("id") or q.get("question")[:40]
+                    mcq_answers.append({
+                        "question": q.get("question"),
+                        "options": q.get("options"),
+                        "user_selection": st.session_state.mcq_answers_storage.get(qid),
+                        "answer": q.get("answer") or q.get("answer_index")
+                    })
+                open_subs = []
                 for i, q in enumerate(quiz.get("open_questions", [])):
                     qtext = q.get("question") if isinstance(q, dict) else str(q)
-                    key = f"diag_open_{i}"
-                    default_text = st.session_state.open_answers_storage.get(key, "")
-                    txt = st.text_area(qtext, value=default_text, key=key, height=120)
-                    st.session_state.open_answers_storage[key] = txt
-
-                if st.button("Submit Diagnostic & Grade"):
-                    mcq_answers = []
-                    for q in quiz.get("mcq", []):
-                        qid = q.get("id") or q.get("question")[:40]
-                        mcq_answers.append({
-                            "question": q.get("question"),
-                            "options": q.get("options"),
-                            "user_selection": st.session_state.mcq_answers_storage.get(qid),
-                            "answer": q.get("answer") or q.get("answer_index")
-                        })
-                    open_subs = []
-                    for i, q in enumerate(quiz.get("open_questions", [])):
-                        qtext = q.get("question") if isinstance(q, dict) else str(q)
-                        open_subs.append({
-                            "question": qtext,
-                            "user_answer": st.session_state.open_answers_storage.get(f"diag_open_{i}", "")
-                        })
-                    payload = {
-                        "student_name": st.session_state.student_name,
-                        "lesson_order": state.get("lesson_order"),
-                        "submissions": {
-                            "mcq_answers": mcq_answers,
-                            "open_questions": open_subs
-                        },
-                        "skip_mode": False
-                    }
-                    r = api_post("/program/submit_diagnostic", payload, timeout=60)
-                    if r:
-                        try:
-                            r.raise_for_status()
-                            st.session_state.current_lesson_state = r.json()
-                            st.session_state.current_quiz_data = None
-                            st.session_state.mcq_answers_storage = {}
-                            st.session_state.open_answers_storage = {}
-                            st.success("Diagnostic graded. Check options / teaching flow below.")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Error submitting diagnostic: {e}")
+                    open_subs.append({
+                        "question": qtext,
+                        "user_answer": st.session_state.open_answers_storage.get(f"diag_open_{i}", "")
+                    })
+                payload = {
+                    "student_name": st.session_state.student_name,
+                    "lesson_order": state.get("lesson_order"),
+                    "submissions": {
+                        "mcq_answers": mcq_answers,
+                        "open_questions": open_subs
+                    },
+                    "skip_mode": False
+                }
+                r = api_post("/program/submit_diagnostic", payload, timeout=60)
+                if r:
+                    try:
+                        r.raise_for_status()
+                        st.session_state.current_lesson_state = r.json()
+                        st.session_state.current_quiz_data = None
+                        st.session_state.mcq_answers_storage = {}
+                        st.session_state.open_answers_storage = {}
+                        st.success("Diagnostic graded. Check options / teaching flow below.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error submitting diagnostic: {e}")
 
         # STRUCTURED TEACHING
         if state.get("status") in ["start_teaching", "lesson_failed"]:
@@ -484,9 +517,7 @@ with tab1:
         if state.get("status") == "passed_diagnostic":
             st.success(f"Passed diagnostic (score {state.get('score',0):.2%}).")
 
-            # ----------------------
-            # ✔ FIXED SKIP BUTTON
-            # ----------------------
+            # SKIP
             if st.button("Skip to Next Lesson"):
                 payload = {
                     "student_name": st.session_state.student_name,
@@ -494,21 +525,15 @@ with tab1:
                     "submissions": {"mcq_answers": [], "open_questions": []},
                     "skip_mode": True
                 }
-
                 r = api_post("/program/submit_diagnostic", payload, timeout=10)
-
                 if r:
                     try:
                         r.raise_for_status()
-                        res = r.json()
-
                         st.session_state.current_explanation = ""
                         st.session_state.current_sub_concept_index = 0
-
                         st.success("Lesson skipped → Loading next lesson...")
                         get_program_status()
                         st.rerun()
-
                     except Exception as e:
                         st.error(f"Skip failed: {e}")
 
