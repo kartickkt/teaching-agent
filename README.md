@@ -36,12 +36,11 @@ The system runs in a loop:
 
 ## Core Components
 
-student_teaching_loop.py # Main policy engine (decides what happens next)
-mastery_service.py # Scoring and mastery update logic
-student_assessment.py # Quiz generation and LLM grading
-student_profiles.py # Student state and persistence layer
-data/curriculum.json # Structured learning plan
-
+- `student_teaching_loop.py` — Main policy engine (decides what happens next)  
+- `mastery_service.py` — Scoring and mastery update logic  
+- `student_assessment.py` — Quiz generation and LLM grading  
+- `student_profiles.py` — Student state and persistence layer  
+- `data/curriculum.json` — Structured learning plan  
 
 ---
 
